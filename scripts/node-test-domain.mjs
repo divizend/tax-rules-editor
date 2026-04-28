@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const testsRoot = path.join(repoRoot, "src");
+const testsRoot = path.join(repoRoot, "src", "domain", "__tests__");
 
 async function listTestFiles(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
