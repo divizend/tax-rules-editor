@@ -51,6 +51,14 @@ type WorkbookTab = {
   simResults: Record<string, Aggregate> | null
 }
 
+const LOCAL_STORAGE_KEY = "tax-rules-editor:v1:tabs-state"
+
+type PersistedStateV1 = {
+  v: 1
+  activeTabId: string | null
+  tabs: WorkbookTab[]
+}
+
 function fileInputAcceptXlsx(): string {
   // both are useful; some browsers ignore one or the other
   return ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -130,6 +138,7 @@ function Section(props: {
 export function WorkbookEditorApp(): React.ReactNode {
   const [tabs, setTabs] = React.useState<WorkbookTab[]>([])
   const [activeTabId, setActiveTabId] = React.useState<string | null>(null)
+  const hasRestoredRef = React.useRef(false)
 
   const [jsRunner, setJsRunner] = React.useState<JsRunnerClient | null>(null)
   React.useEffect(() => {
@@ -139,6 +148,66 @@ export function WorkbookEditorApp(): React.ReactNode {
     setJsRunner(runner)
     return () => runner.terminate()
   }, [])
+
+  // Restore tabs state once on mount (client-side only).
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    if (hasRestoredRef.current) return
+    hasRestoredRef.current = true
+
+    try {
+      const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as unknown
+      const st = parsed as Partial<PersistedStateV1>
+      if (st?.v !== 1) return
+      if (!Array.isArray(st.tabs)) return
+      const restoredTabs = st.tabs.filter(Boolean) as WorkbookTab[]
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTabs(restoredTabs)
+      const nextActive =
+        typeof st.activeTabId === "string" ? st.activeTabId : null
+      setActiveTabId(
+        nextActive && restoredTabs.some((t) => t.id === nextActive)
+          ? nextActive
+          : restoredTabs.length
+            ? restoredTabs[0]!.id
+            : null
+      )
+    } catch {
+      // ignore corrupt storage
+    }
+  }, [])
+
+  // Persist full state of open workbooks whenever it changes.
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    if (!hasRestoredRef.current) return
+
+    const state: PersistedStateV1 = { v: 1, activeTabId, tabs }
+
+    const write = () => {
+      try {
+        window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state))
+      } catch {
+        // ignore quota/security errors
+      }
+    }
+
+    type RequestIdleCallback = (
+      cb: () => void,
+      opts?: { timeout?: number }
+    ) => number
+    const ric = (window as unknown as { requestIdleCallback?: RequestIdleCallback })
+      .requestIdleCallback
+
+    if (typeof ric === "function") {
+      ric(write, { timeout: 500 })
+    } else {
+      const t = window.setTimeout(write, 0)
+      return () => window.clearTimeout(t)
+    }
+  }, [activeTabId, tabs])
 
   const activeTab = React.useMemo(
     () =>
