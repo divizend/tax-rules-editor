@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import type { CellError, RuleError, SheetError } from "../errors.js";
 import type { BusinessLogicWorkbook } from "../schema.js";
 import { schemaValidate } from "../schemaValidate.js";
 
@@ -31,6 +32,12 @@ function errors(result: ReturnType<typeof schemaValidate>) {
   return result.errors;
 }
 
+type ValidationError = SheetError | CellError | RuleError;
+
+function hasSheet(e: ValidationError): e is SheetError | CellError {
+  return "sheet" in e;
+}
+
 function assertHasError(
   result: ReturnType<typeof schemaValidate>,
   expected: { sheet: string; severity: "error" | "warning"; message?: string },
@@ -39,6 +46,7 @@ function assertHasError(
   assert.ok(
     es.some(
       (e) =>
+        hasSheet(e) &&
         e.sheet === expected.sheet &&
         e.severity === expected.severity &&
         (expected.message ? e.message === expected.message : true),
@@ -65,6 +73,7 @@ test("inputTypes must have unique non-empty names", () => {
   assert.ok(
     errors(res).some(
       (e) =>
+        hasSheet(e) &&
         e.sheet === "InputTypes" &&
         e.severity === "error" &&
         e.message.startsWith("Input type names must be unique. Duplicates:"),
@@ -124,9 +133,34 @@ test("each ColumnDef.typeName references an existing input type", () => {
   assert.ok(
     errors(res).some(
       (e) =>
+        hasSheet(e) &&
         e.sheet === "Columns" &&
         e.severity === "error" &&
         e.message.startsWith("Columns reference unknown input type(s): "),
+    ),
+  );
+});
+
+test("columns: blank/missing typeName vs unknown typeName are reported separately", () => {
+  const wb = makeValidWorkbook();
+  // blank / missing should trigger the dedicated message
+  wb.columns.push({ sheet: "Taxpayers", columnName: "blank", typeName: "   " });
+  // unknown non-empty should be listed in the unknown-types error
+  wb.columns.push({ sheet: "Taxpayers", columnName: "unknown", typeName: "doesNotExist" });
+
+  const res = schemaValidate(wb);
+  assert.equal(res.ok, false);
+
+  assertHasError(res, { sheet: "Columns", severity: "error", message: "Column typeName must be a non-empty string." });
+
+  // unknown types should list only non-empty unknown values (no blanks)
+  assert.ok(
+    errors(res).some(
+      (e) =>
+        hasSheet(e) &&
+        e.sheet === "Columns" &&
+        e.severity === "error" &&
+        e.message === "Columns reference unknown input type(s): doesNotExist",
     ),
   );
 });
@@ -142,6 +176,7 @@ test("rules have unique non-empty names", () => {
   assert.ok(
     errors(res).some(
       (e) =>
+        hasSheet(e) &&
         e.sheet === "Rules" &&
         e.severity === "error" &&
         e.message.startsWith("Rule names must be unique. Duplicates:"),

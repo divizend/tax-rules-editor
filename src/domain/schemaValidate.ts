@@ -1,5 +1,5 @@
 import type { ValidationResult } from "./errors.js";
-import type { BusinessLogicWorkbook, ColumnDef, InputTypeDef, RuleDef } from "./schema.js";
+import type { BusinessLogicWorkbook, InputTypeDef, RuleDef } from "./schema.js";
 
 type SchemaValidationError = ValidationResult<never>["errors"][number];
 
@@ -29,13 +29,13 @@ type ValidationContext = {
 function validateInputTypes(workbook: BusinessLogicWorkbook, ctx: ValidationContext): SchemaValidationError[] {
   const errors: SchemaValidationError[] = [];
 
-  const invalidInputTypeNames: string[] = [];
+  let hasInvalidInputTypeName = false;
   for (const it of workbook.inputTypes) {
-    if (!isNonEmptyName(it.name)) invalidInputTypeNames.push(String(it.name));
+    if (!isNonEmptyName(it.name)) hasInvalidInputTypeName = true;
     else ctx.inputTypeNames.add(it.name.trim());
   }
 
-  if (invalidInputTypeNames.length > 0) {
+  if (hasInvalidInputTypeName) {
     errors.push(sheetError("InputTypes", 'Input types must have a non-empty "name".'));
   }
 
@@ -76,18 +76,24 @@ function validateColumns(workbook: BusinessLogicWorkbook, ctx: ValidationContext
     }
   }
 
-  const missingTypeRefs = new Set<string>();
+  let hasBlankOrMissingTypeName = false;
+  const unknownTypeNames = new Set<string>();
   for (const col of workbook.columns) {
-    if (!isNonEmptyName(col.typeName) || !ctx.inputTypeNames.has(col.typeName.trim())) {
-      missingTypeRefs.add(String(col.typeName));
+    if (!isNonEmptyName(col.typeName)) {
+      hasBlankOrMissingTypeName = true;
+      continue;
     }
+    const trimmed = col.typeName.trim();
+    if (!ctx.inputTypeNames.has(trimmed)) unknownTypeNames.add(trimmed);
   }
-  if (missingTypeRefs.size > 0) {
+
+  if (hasBlankOrMissingTypeName) {
+    errors.push(sheetError("Columns", "Column typeName must be a non-empty string."));
+  }
+
+  if (unknownTypeNames.size > 0) {
     errors.push(
-      sheetError(
-        "Columns",
-        `Columns reference unknown input type(s): ${[...missingTypeRefs].join(", ")}`,
-      ),
+      sheetError("Columns", `Columns reference unknown input type(s): ${[...unknownTypeNames].join(", ")}`),
     );
   }
 
@@ -97,11 +103,11 @@ function validateColumns(workbook: BusinessLogicWorkbook, ctx: ValidationContext
 function validateRules(workbook: BusinessLogicWorkbook): SchemaValidationError[] {
   const errors: SchemaValidationError[] = [];
 
-  const invalidRuleNames: string[] = [];
+  let hasInvalidRuleName = false;
   for (const r of workbook.rules) {
-    if (!isNonEmptyName(r.name)) invalidRuleNames.push(String(r.name));
+    if (!isNonEmptyName(r.name)) hasInvalidRuleName = true;
   }
-  if (invalidRuleNames.length > 0) {
+  if (hasInvalidRuleName) {
     errors.push(sheetError("Rules", 'Rules must have a non-empty "name".'));
   }
 

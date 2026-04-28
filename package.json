@@ -10,7 +10,7 @@
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "bash -lc 'shopt -s globstar nullglob && node --import tsx --test src/domain/__tests__/**/*.test.ts'"
+    "test": "node scripts/node-test-domain.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
