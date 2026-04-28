@@ -7,8 +7,9 @@ const InputTypeRowSchema = z.object({
   name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   parseFn: z.string().min(1),
   formatFn: z.string().min(1),
-  refSheet: z.string().optional().default(""),
-  refColumn: z.string().optional().default(""),
+  // Keep these required for OpenAI JSON schema strictness; empty string means "not a foreign key".
+  refSheet: z.string(),
+  refColumn: z.string(),
 });
 
 export async function POST(req: Request) {
