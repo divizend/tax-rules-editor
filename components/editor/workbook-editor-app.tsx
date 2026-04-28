@@ -621,40 +621,35 @@ export function WorkbookEditorApp(): React.ReactNode {
           </>
         ) : (
           <Section title="Start">
-            <div className="flex flex-col gap-4">
-              <div className="text-sm text-muted-foreground">
-                Create a new business-logic workbook or open an existing one
-                (XLSX with `InputTypes`, `Columns`, `Rules`).
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  onClick={() => {
-                    openTab({
-                      title: nextUntitledTitle("Untitled"),
-                      wb: createNewBusinessLogicWorkbook(),
-                    })
-                  }}
-                >
-                  Create new
-                </Button>
+            <div className="flex min-h-56 flex-col items-center justify-center gap-3">
+              <Button
+                size="lg"
+                onClick={() => {
+                  openTab({
+                    title: nextUntitledTitle("Untitled"),
+                    wb: createNewBusinessLogicWorkbook(),
+                  })
+                }}
+              >
+                Create new XLSX
+              </Button>
 
-                <label className="inline-flex cursor-pointer items-center gap-2">
-                  <input
-                    type="file"
-                    accept={fileInputAcceptXlsx()}
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0]
-                      if (!f) return
-                      void onImportBusinessLogic(f)
-                      e.currentTarget.value = ""
-                    }}
-                  />
-                  <span className={buttonVariants({ variant: "default" })}>
-                    Open existing XLSX
-                  </span>
-                </label>
-              </div>
+              <label className="inline-flex cursor-pointer items-center gap-2">
+                <input
+                  type="file"
+                  accept={fileInputAcceptXlsx()}
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (!f) return
+                    void onImportBusinessLogic(f)
+                    e.currentTarget.value = ""
+                  }}
+                />
+                <span className={buttonVariants({ variant: "secondary", size: "lg" })}>
+                  Open existing XLSX
+                </span>
+              </label>
             </div>
           </Section>
         )}
