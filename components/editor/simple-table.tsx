@@ -18,6 +18,35 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
   onDeleteRow: (idx: number) => void;
 }): React.ReactNode {
   const { caption, rows, columns, onChangeRow, onAddRow, onDeleteRow } = props;
+  const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
+  const [draft, setDraft] = React.useState<Record<string, string> | null>(null);
+
+  function openEdit(idx: number) {
+    const row = rows[idx];
+    if (!row) return;
+    const nextDraft: Record<string, string> = {};
+    for (const c of columns) {
+      const value = row[c.key];
+      nextDraft[String(c.key)] = typeof value === "string" ? value : value == null ? "" : String(value);
+    }
+    setEditingIdx(idx);
+    setDraft(nextDraft);
+  }
+
+  function closeEdit() {
+    setEditingIdx(null);
+    setDraft(null);
+  }
+
+  function saveEdit() {
+    if (editingIdx == null || !draft) return;
+    const base = rows[editingIdx];
+    if (!base) return;
+    const next = { ...base } as Record<string, unknown>;
+    for (const c of columns) next[String(c.key)] = draft[String(c.key)] ?? "";
+    onChangeRow(editingIdx, next as Row);
+    closeEdit();
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -41,7 +70,7 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
                   {c.label}
                 </th>
               ))}
-              <th className="w-1 px-3 py-2" />
+              <th className="w-1 whitespace-nowrap px-3 py-2 text-right font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -57,26 +86,27 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
                   {columns.map((c) => {
                     const value = (row[c.key] ?? "") as unknown;
                     const str = typeof value === "string" ? value : String(value ?? "");
-                    const common = {
-                      value: str,
-                      placeholder: c.placeholder,
-                      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-                        onChangeRow(idx, { ...row, [c.key]: e.target.value } as Row);
-                      },
-                      className:
-                        "w-full min-w-40 bg-transparent px-3 py-2 outline-none placeholder:text-muted-foreground",
-                    };
                     return (
-                      <td key={String(c.key)} className="p-0">
+                      <td key={String(c.key)} className="px-3 py-2">
                         {c.kind === "textarea" ? (
-                          <textarea rows={5} {...common} />
+                          <div className="max-w-[28rem] whitespace-pre-wrap font-mono text-xs text-muted-foreground">
+                            {str.length > 220 ? `${str.slice(0, 220)}…` : str || "—"}
+                          </div>
                         ) : (
-                          <input type="text" {...common} />
+                          <div className="max-w-[18rem] truncate">{str || "—"}</div>
                         )}
                       </td>
                     );
                   })}
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(idx)}
+                      className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                    >
+                      Edit
+                    </button>
+                    <span className="inline-block w-2" />
                     <button
                       type="button"
                       onClick={() => onDeleteRow(idx)}
@@ -91,6 +121,70 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
           </tbody>
         </table>
       </div>
+
+      {editingIdx != null && draft ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeEdit();
+          }}
+        >
+          <div className="w-full max-w-2xl rounded-xl border bg-background shadow-lg">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-sm font-medium">Edit row</div>
+              <button
+                type="button"
+                onClick={closeEdit}
+                className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+              >
+                Close
+              </button>
+            </div>
+            <div className="flex flex-col gap-3 p-4">
+              {columns.map((c) => (
+                <label key={String(c.key)} className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">{c.label}</span>
+                  {c.kind === "textarea" ? (
+                    <textarea
+                      rows={8}
+                      value={draft[String(c.key)] ?? ""}
+                      placeholder={c.placeholder}
+                      onChange={(e) => setDraft({ ...draft, [String(c.key)]: e.target.value })}
+                      className="w-full resize-y rounded-md border bg-transparent px-3 py-2 font-mono text-xs outline-none placeholder:text-muted-foreground"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={draft[String(c.key)] ?? ""}
+                      placeholder={c.placeholder}
+                      onChange={(e) => setDraft({ ...draft, [String(c.key)]: e.target.value })}
+                      className="w-full rounded-md border bg-transparent px-3 py-2 outline-none placeholder:text-muted-foreground"
+                    />
+                  )}
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t p-4">
+              <button
+                type="button"
+                onClick={closeEdit}
+                className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveEdit}
+                className="rounded-md border bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
