@@ -116,7 +116,7 @@ function resolveTaxpayerForRow(params: {
 }): { ok: true; taxpayerId: string } | { ok: false; message: string } {
   const { inputTypesByName, columnsBySheet, idx, start } = params;
 
-  const taxpayersSheet = "Taxpayers";
+  const taxpayersSheet = "Taxpayer";
   const taxpayersIdIndex = idx.bySheetByColumnValue[taxpayersSheet]?.id ?? {};
 
   const startCols = columnsBySheet.get(start.sheet) ?? [];
@@ -305,9 +305,9 @@ export function parseAndValidateInputWorkbook(params: {
   }
 
   // 4) Taxpayer resolution
-  const taxpayers = asSheetRows(input, "Taxpayers");
+  const taxpayers = asSheetRows(input, "Taxpayer");
   if (!taxpayers) {
-    errors.push(sheetError("Taxpayers", 'Missing mandatory sheet "Taxpayers".'));
+    errors.push(sheetError("Taxpayer", 'Missing mandatory sheet "Taxpayer".'));
   }
 
   const validatedRowsBySheet: Record<string, ValidatedInputRow[]> = {};

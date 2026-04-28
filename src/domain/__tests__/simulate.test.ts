@@ -27,7 +27,7 @@ test("simulateAll runs a rule that mutates the aggregate (Immer)", async () => {
   };
 
   const aggregates: Record<string, Aggregate> = {
-    T1: { Taxpayers: [{ id: "T1" }] },
+    T1: { Taxpayer: [{ id: "T1" }] },
   };
 
   const res = await simulateAll({ schema, aggregates, jsRunner: makeJsRunner() });
@@ -43,7 +43,7 @@ test("simulateAll captures rule errors", async () => {
     rules: [{ name: "boom", ruleFn: `() => { throw new Error("boom"); }` }],
   };
 
-  const aggregates: Record<string, Aggregate> = { T1: { Taxpayers: [{ id: "T1" }] } };
+  const aggregates: Record<string, Aggregate> = { T1: { Taxpayer: [{ id: "T1" }] } };
   const res = await simulateAll({ schema, aggregates, jsRunner: makeJsRunner() });
 
   assert.equal(res.errors.length, 1);
@@ -60,7 +60,7 @@ test("simulateAll continues other taxpayers when one fails", async () => {
       {
         name: "sometimesBoom",
         ruleFn: `(agg) => {
-          if (agg.Taxpayers?.[0]?.id === "T1") throw new Error("nope");
+          if (agg.Taxpayer?.[0]?.id === "T1") throw new Error("nope");
           (agg.Results ??= []).push({ ran: true });
         }`,
       },
@@ -68,8 +68,8 @@ test("simulateAll continues other taxpayers when one fails", async () => {
   };
 
   const aggregates: Record<string, Aggregate> = {
-    T1: { Taxpayers: [{ id: "T1" }] },
-    T2: { Taxpayers: [{ id: "T2" }] },
+    T1: { Taxpayer: [{ id: "T1" }] },
+    T2: { Taxpayer: [{ id: "T2" }] },
   };
 
   const res = await simulateAll({ schema, aggregates, jsRunner: makeJsRunner() });

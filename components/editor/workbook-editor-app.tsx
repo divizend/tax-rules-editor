@@ -87,7 +87,7 @@ async function validateSchemaWithWorkerCompile(params: {
       if (!r.ok)
         errors.push({
           severity: "error",
-          sheet: "InputTypes",
+              sheet: "InputType",
           message: `parseFn "${it.name}": ${r.error}`,
         })
     }
@@ -96,7 +96,7 @@ async function validateSchemaWithWorkerCompile(params: {
       if (!r.ok)
         errors.push({
           severity: "error",
-          sheet: "InputTypes",
+              sheet: "InputType",
           message: `formatFn "${it.name}": ${r.error}`,
         })
     }
@@ -107,7 +107,7 @@ async function validateSchemaWithWorkerCompile(params: {
       if (!r.ok)
         errors.push({
           severity: "error",
-          sheet: "Rules",
+              sheet: "Rule",
           message: `ruleFn "${r0.name}": ${r.error}`,
         })
     }
@@ -133,6 +133,10 @@ function Section(props: {
       <div className="p-4">{props.children}</div>
     </div>
   )
+}
+
+function Panel(props: { children: React.ReactNode }): React.ReactNode {
+  return <div className="rounded-xl border bg-background p-4">{props.children}</div>
 }
 
 export function WorkbookEditorApp(): React.ReactNode {
@@ -580,9 +584,9 @@ export function WorkbookEditorApp(): React.ReactNode {
               </div>
             </Section>
 
-            <Section title="InputTypes">
+            <Panel>
               <SimpleTable<InputTypeDef>
-                caption="InputTypes sheet"
+                caption="InputType sheet"
                 rows={activeTab.wb.inputTypes}
                 headerRight={
                   <button
@@ -656,18 +660,18 @@ export function WorkbookEditorApp(): React.ReactNode {
                   )
                 }
               />
-            </Section>
+            </Panel>
 
-            <Section title="Columns">
+            <Panel>
               <SimpleTable<ColumnDef>
-                caption="Columns sheet"
+                caption="Column sheet"
                 rows={activeTab.wb.columns}
                 createRow={() => ({ sheet: "", columnName: "", typeName: "" })}
                 columns={[
                   {
                     key: "sheet",
                     label: "sheet",
-                    placeholder: "e.g. Taxpayers",
+                    placeholder: "e.g. Taxpayer",
                   },
                   {
                     key: "columnName",
@@ -690,11 +694,11 @@ export function WorkbookEditorApp(): React.ReactNode {
                   setColumns(activeTab.wb.columns.filter((_, i) => i !== idx))
                 }
               />
-            </Section>
+            </Panel>
 
-            <Section title="Rules">
+            <Panel>
               <SimpleTable<RuleDef>
-                caption="Rules sheet"
+                caption="Rule sheet"
                 rows={activeTab.wb.rules}
                 headerRight={
                   <button
@@ -736,7 +740,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                   setRules(activeTab.wb.rules.filter((_, i) => i !== idx))
                 }
               />
-            </Section>
+            </Panel>
 
             <Section
               title="Template + Simulation"

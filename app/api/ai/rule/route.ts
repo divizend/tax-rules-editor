@@ -22,7 +22,7 @@ export async function POST(req: Request) {
       model: openai("gpt-4.1-mini"),
       schema: RuleRowSchema,
       system:
-        "Generate exactly one Rules row for an XLSX business-logic workbook. " +
+        "Generate exactly one Rule row for an XLSX business-logic workbook. " +
         "Return an object with name and ruleFn. " +
         "ruleFn must be a JavaScript function expression (arrow or function expression) with signature (draft)=>void; mutate draft in-place. " +
         "Keep deterministic; no time/random/network/DOM.",

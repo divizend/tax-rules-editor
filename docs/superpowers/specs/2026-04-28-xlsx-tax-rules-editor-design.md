@@ -58,13 +58,13 @@ There are two distinct XLSX artifacts:
 
 The business-logic workbook must contain these **fixed** sheets:
 
-- `InputTypes`
-- `Columns`
-- `Rules`
+- `InputType`
+- `Column`
+- `Rule`
 
 No other sheets are required (extra sheets are ignored by the app unless specified later).
 
-#### `InputTypes` sheet
+#### `InputType` sheet
 
 Represents both parsing/formatting logic and (optionally) foreign-key semantics.
 
@@ -82,9 +82,9 @@ Columns (header row in row 1):
 Mandatory built-in input type:
 
 - `taxpayerId`
-  - In addition to `parseFn` behavior, values of this type must validate that the parsed value exists in the `Taxpayers` sheet’s `id` column of the **input workbook**.
+  - In addition to `parseFn` behavior, values of this type must validate that the parsed value exists in the `Taxpayer` sheet’s `id` column of the **input workbook**.
 
-#### `Columns` sheet
+#### `Column` sheet
 
 Defines the input workbook’s sheets and their columns.
 
@@ -92,14 +92,14 @@ Columns:
 
 - `sheet` (string, required)
 - `columnName` (string, required)
-- `typeName` (string, required; must reference `InputTypes.name`)
+- `typeName` (string, required; must reference `InputType.name`)
 
 Mandatory structural invariants:
 
-- There must be at least one sheet named `Taxpayers`.
-- The `Taxpayers` sheet must contain a column named `id` with type `taxpayerId`.
+- There must be at least one sheet named `Taxpayer`.
+- The `Taxpayer` sheet must contain a column named `id` with type `taxpayerId`.
 
-#### `Rules` sheet
+#### `Rule` sheet
 
 Defines calculation behavior as user-authored JS.
 
@@ -115,28 +115,28 @@ Important: rules do **not** directly target a fixed `Results` sheet. The rule au
 
 ### 2) Input workbook (template + filled)
 
-Generated from `Columns`:
+Generated from `Column`:
 
-- One sheet per distinct `Columns.sheet`
+- One sheet per distinct `Column.sheet`
 - Header row in row 1 is the ordered list of `columnName` values for that sheet
 - Data begins at row 2
 
 Mandatory constraints:
 
-- Must contain a `Taxpayers` sheet (not removable)
+- Must contain a `Taxpayer` sheet (not removable)
 - Every sheet row must have a globally unique `id` (opaque string)
-  - Concretely: this is achieved by requiring `Columns` include an `id` column for each sheet.
+  - Concretely: this is achieved by requiring `Column` include an `id` column for each sheet.
   - Uniqueness is global across the entire workbook, not just per sheet.
 
 Referential integrity:
 
-- If an `InputTypes` row declares `refSheet/refColumn`, then any cell with that type references a specific row in the referenced sheet by equality of referenced column.
+- If an `InputType` row declares `refSheet/refColumn`, then any cell with that type references a specific row in the referenced sheet by equality of referenced column.
 
 Taxpayer membership resolution:
 
-- A row belongs to a taxpayer if, by following foreign-key columns (possibly multiple hops), the row can be linked to `Taxpayers.id`.
+- A row belongs to a taxpayer if, by following foreign-key columns (possibly multiple hops), the row can be linked to `Taxpayer.id`.
 - Ambiguity or impossibility is a validation error:
-  - no path to `Taxpayers.id`
+  - no path to `Taxpayer.id`
   - multiple conflicting paths to different taxpayers
   - reference points to missing row
 
@@ -152,7 +152,7 @@ For a filled input workbook, after parsing and validation:
 
 ### Taxpayer aggregate model
 
-For each taxpayer `t` (id from `Taxpayers.id`), build an object:
+For each taxpayer `t` (id from `Taxpayer.id`), build an object:
 
 ```ts
 type Aggregate = Record<string, Array<Record<string, unknown>>>
@@ -164,7 +164,7 @@ Example:
 
 ```ts
 {
-  Taxpayers: [{ id: "t1", name: "Alice" }],
+  Taxpayer: [{ id: "t1", name: "Alice" }],
   Orders: [{ id: "o1", taxpayerId: "t1", amount: 9.99 }],
   Payments: [{ id: "p1", orderId: "o1", amount: 9.99 }]
 }
@@ -201,10 +201,10 @@ Validation stages:
    - Required sheets exist
    - Required columns exist
    - Unique constraints (type names, rule names)
-   - Mandatory `Taxpayers` + `taxpayerId` invariants
+   - Mandatory `Taxpayer` + `taxpayerId` invariants
    - JS sources parse and compile to functions
 2. **Input workbook validation**
-   - Required sheets + columns exist per `Columns`
+   - Required sheets + columns exist per `Column`
    - Parse each cell with its `InputTypes.parseFn` (errors recorded at cell location)
    - Check global uniqueness of row `id`
    - Foreign-key integrity (ref exists)
@@ -220,8 +220,8 @@ UI should present:
 
 ## Exports
 
-- Export business-logic workbook: `InputTypes`, `Columns`, `Rules` sheets.
-- Export template input workbook: sheets defined by `Columns`, empty data rows.
+- Export business-logic workbook: `InputType`, `Column`, `Rule` sheets.
+- Export template input workbook: sheets defined by `Column`, empty data rows.
 - Optional future export: computed workbook that materializes computed data into XLSX sheets (out of scope for initial design unless explicitly requested).
 
 ## Technical stack constraints (from repo)

@@ -17,8 +17,8 @@ test("generateTemplate creates one sheet per distinct Columns.sheet", () => {
     inputTypes: [],
     rules: [],
     columns: [
-      { sheet: "Taxpayers", columnName: "id", typeName: "taxpayerId" },
-      { sheet: "Taxpayers", columnName: "name", typeName: "string" },
+      { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
+      { sheet: "Taxpayer", columnName: "name", typeName: "string" },
       { sheet: "Invoices", columnName: "invoiceId", typeName: "string" },
       { sheet: "Invoices", columnName: "amount", typeName: "string" },
     ],
@@ -27,7 +27,7 @@ test("generateTemplate creates one sheet per distinct Columns.sheet", () => {
   const buf = generateTemplate(wb);
   const book = XLSX.read(buf, { type: "array" });
 
-  assert.deepEqual(book.SheetNames, ["Taxpayers", "Invoices"]);
+  assert.deepEqual(book.SheetNames, ["Taxpayer", "Invoices"]);
 });
 
 test("generateTemplate preserves header order per sheet as in wb.columns", () => {

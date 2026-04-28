@@ -23,7 +23,7 @@ export async function POST(req: Request) {
       model: openai("gpt-4.1-mini"),
       schema: InputTypeRowSchema,
       system:
-        "Generate exactly one InputTypes row for an XLSX business-logic workbook. " +
+        "Generate exactly one InputType row for an XLSX business-logic workbook. " +
         "Return an object with name, parseFn, formatFn. " +
         "Do not include foreign key information (refSheet/refColumn); those will be added separately by the user. " +
         "The user prompt is the human-readable description of the type. " +

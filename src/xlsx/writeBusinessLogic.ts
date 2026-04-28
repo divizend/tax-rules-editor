@@ -33,19 +33,19 @@ export function writeBusinessLogicWorkbook(wb: BusinessLogicWorkbook): ArrayBuff
       it.refColumn ?? "",
     ]),
   ];
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(inputTypesAoA), "InputTypes");
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(inputTypesAoA), "InputType");
 
   const columnsAoA: unknown[][] = [
     [...COLUMNS_HEADERS],
     ...wb.columns.map((c) => [c.sheet, c.columnName, c.typeName]),
   ];
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(columnsAoA), "Columns");
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(columnsAoA), "Column");
 
   const rulesAoA: unknown[][] = [
     [...RULES_HEADERS],
     ...wb.rules.map((r) => [r.name, r.ruleFn]),
   ];
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rulesAoA), "Rules");
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rulesAoA), "Rule");
 
   const out = XLSX.write(book, { bookType: "xlsx", type: "array" });
   return toArrayBuffer(out);

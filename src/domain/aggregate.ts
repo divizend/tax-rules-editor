@@ -6,8 +6,8 @@ export function buildAggregates(input: ValidatedInputWorkbook): Record<string, A
   const sheetNames = Object.keys(input.rowsBySheet);
 
   const taxpayerIds = new Set<string>();
-  for (const r of input.rowsBySheet.Taxpayers ?? []) taxpayerIds.add(r.taxpayerId);
-  // Fallback: in case Taxpayers sheet isn't present in the object shape (shouldn't happen after validation)
+  for (const r of input.rowsBySheet.Taxpayer ?? []) taxpayerIds.add(r.taxpayerId);
+  // Fallback: in case Taxpayer sheet isn't present in the object shape (shouldn't happen after validation)
   if (taxpayerIds.size === 0) {
     for (const rows of Object.values(input.rowsBySheet)) {
       for (const r of rows) taxpayerIds.add(r.taxpayerId);

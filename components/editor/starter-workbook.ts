@@ -5,7 +5,7 @@ export function createNewBusinessLogicWorkbook(): BusinessLogicWorkbook {
     inputTypes: [
       {
         name: "taxpayerId",
-        description: "A globally unique taxpayer identifier (must exist in Taxpayers.id).",
+        description: "A globally unique taxpayer identifier (must exist in Taxpayer.id).",
         parseFn: "(raw) => String(raw ?? '').trim()",
         formatFn: "(value) => String(value ?? '')",
       },
@@ -23,8 +23,8 @@ export function createNewBusinessLogicWorkbook(): BusinessLogicWorkbook {
       },
     ],
     columns: [
-      { sheet: "Taxpayers", columnName: "id", typeName: "taxpayerId" },
-      { sheet: "Taxpayers", columnName: "name", typeName: "string" },
+      { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
+      { sheet: "Taxpayer", columnName: "name", typeName: "string" },
     ],
     rules: [
       {

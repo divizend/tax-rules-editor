@@ -177,9 +177,9 @@ import { validateBusinessLogicWorkbook } from "../schemaValidate";
 
 const base = () => ({
   inputTypes: [
-    { name: "taxpayerId", parseFn: "(s)=>s", formatFn: "(v)=>String(v)", refSheet: "Taxpayers", refColumn: "id" },
+    { name: "taxpayerId", parseFn: "(s)=>s", formatFn: "(v)=>String(v)", refSheet: "Taxpayer", refColumn: "id" },
   ],
-  columns: [{ sheet: "Taxpayers", columnName: "id", typeName: "taxpayerId" }],
+  columns: [{ sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" }],
   rules: [],
 });
 
@@ -189,7 +189,7 @@ describe("validateBusinessLogicWorkbook", () => {
     expect(res.ok).toBe(true);
   });
 
-  test("rejects missing Taxpayers sheet", () => {
+  test("rejects missing Taxpayer sheet", () => {
     const w = base();
     w.columns = [{ sheet: "People", columnName: "id", typeName: "taxpayerId" }];
     const res = validateBusinessLogicWorkbook(w);
@@ -215,24 +215,24 @@ export function validateBusinessLogicWorkbook(
 
   const typeNames = new Set<string>();
   for (const t of wb.inputTypes) {
-    if (!t.name?.trim()) errors.push({ severity: "error", sheet: "InputTypes", message: "Input type name is required" });
-    if (typeNames.has(t.name)) errors.push({ severity: "error", sheet: "InputTypes", message: `Duplicate input type: ${t.name}` });
+    if (!t.name?.trim()) errors.push({ severity: "error", sheet: "InputType", message: "Input type name is required" });
+    if (typeNames.has(t.name)) errors.push({ severity: "error", sheet: "InputType", message: `Duplicate input type: ${t.name}` });
     typeNames.add(t.name);
   }
 
   if (!typeNames.has("taxpayerId")) {
-    errors.push({ severity: "error", sheet: "InputTypes", message: "Missing mandatory input type: taxpayerId" });
+    errors.push({ severity: "error", sheet: "InputType", message: "Missing mandatory input type: taxpayerId" });
   }
 
-  const hasTaxpayers = wb.columns.some((c) => c.sheet === "Taxpayers");
-  if (!hasTaxpayers) errors.push({ severity: "error", sheet: "Columns", message: "Missing mandatory sheet: Taxpayers" });
+  const hasTaxpayer = wb.columns.some((c) => c.sheet === "Taxpayer");
+  if (!hasTaxpayer) errors.push({ severity: "error", sheet: "Column", message: "Missing mandatory sheet: Taxpayer" });
 
-  const taxpayersId = wb.columns.some((c) => c.sheet === "Taxpayers" && c.columnName === "id" && c.typeName === "taxpayerId");
-  if (!taxpayersId) {
+  const taxpayerIdCol = wb.columns.some((c) => c.sheet === "Taxpayer" && c.columnName === "id" && c.typeName === "taxpayerId");
+  if (!taxpayerIdCol) {
     errors.push({
       severity: "error",
-      sheet: "Columns",
-      message: "Taxpayers sheet must contain column id with type taxpayerId",
+      sheet: "Column",
+      message: "Taxpayer sheet must contain column id with type taxpayerId",
     });
   }
 
@@ -240,7 +240,7 @@ export function validateBusinessLogicWorkbook(
     if (!typeNames.has(c.typeName)) {
       errors.push({
         severity: "error",
-        sheet: "Columns",
+        sheet: "Column",
         message: `Column ${c.sheet}.${c.columnName} references unknown type: ${c.typeName}`,
       });
     }
@@ -248,7 +248,7 @@ export function validateBusinessLogicWorkbook(
 
   const ruleNames = new Set<string>();
   for (const r of wb.rules) {
-    if (ruleNames.has(r.name)) errors.push({ severity: "error", sheet: "Rules", message: `Duplicate rule: ${r.name}` });
+    if (ruleNames.has(r.name)) errors.push({ severity: "error", sheet: "Rule", message: `Duplicate rule: ${r.name}` });
     ruleNames.add(r.name);
   }
 
@@ -293,7 +293,7 @@ pnpm add xlsx immer
 Create `src/xlsx/readBusinessLogic.ts` with a function:
 
 - `readBusinessLogicWorkbook(arrayBuffer: ArrayBuffer): BusinessLogicWorkbook`
-  - reads sheets `InputTypes`, `Columns`, `Rules` (missing sheet → empty list but validator will catch required invariants)
+  - reads sheets `InputType`, `Column`, `Rule` (missing sheet → empty list but validator will catch required invariants)
   - expects row 1 headers as specified in the spec
 
 - [ ] **Step 3: Implement writer**
@@ -319,8 +319,8 @@ git commit -m "feat: import/export business-logic workbook as xlsx"
 - [ ] **Step 1: Implement generator**
 
 `generateTemplate(wb: BusinessLogicWorkbook): ArrayBuffer`:
-- create sheets for each distinct `Columns.sheet`
-- headers in row 1 in the order they appear in `Columns` for that sheet
+- create sheets for each distinct `Column.sheet`
+- headers in row 1 in the order they appear in `Column` for that sheet
 - no data rows
 
 - [ ] **Step 2: Commit**
@@ -344,7 +344,7 @@ git commit -m "feat: generate input template workbook from columns"
 - [ ] **Step 2: Read input workbook into raw tables**
 - [ ] **Step 3: Parse cell strings (defer actual JS parsing to worker later; for now accept string passthrough)**
 - [ ] **Step 4: Enforce global unique `id`**
-- [ ] **Step 5: Build FK indices using `InputTypes.refSheet/refColumn`**
+- [ ] **Step 5: Build FK indices using `InputType.refSheet/refColumn`**
 - [ ] **Step 6: Resolve taxpayer membership (graph walk)**
 - [ ] **Step 7: Commit**
 
@@ -391,7 +391,7 @@ git commit -m "feat: generate input template workbook from columns"
 
 - [ ] **Step 1: App shell with start screen (import/create)**
 - [ ] **Step 2: Add in-memory workbook state (React state + reducer)**
-- [ ] **Step 3: Editor tabs (InputTypes/Columns/Rules) with basic table editing**
+- [ ] **Step 3: Editor tabs (InputType/Column/Rule) with basic table editing**
 - [ ] **Step 4: Export business-logic XLSX**
 - [ ] **Step 5: Generate template XLSX**
 - [ ] **Step 6: Upload filled template + show validation errors**

@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 import type { ValidatedInputWorkbook } from "../inputWorkbook.js";
 import { buildAggregates } from "../aggregate.js";
 
-test("buildAggregates groups rows by taxpayer and by sheet (including Taxpayers row)", () => {
+test("buildAggregates groups rows by taxpayer and by sheet (including Taxpayer row)", () => {
   const input: ValidatedInputWorkbook = {
     rowsBySheet: {
-      Taxpayers: [
+      Taxpayer: [
         { rowNumber: 2, taxpayerId: "T1", raw: { id: "T1", name: "Alice" } },
         { rowNumber: 3, taxpayerId: "T2", raw: { id: "T2", name: "Bob" } },
       ],
@@ -18,19 +18,19 @@ test("buildAggregates groups rows by taxpayer and by sheet (including Taxpayers 
       ],
     },
     globalRowIndex: {},
-    indices: { idBySheet: { Taxpayers: {}, Orders: {} } },
+    indices: { idBySheet: { Taxpayer: {}, Orders: {} } },
   };
 
   const aggs = buildAggregates(input);
   assert.deepEqual(Object.keys(aggs).sort(), ["T1", "T2"]);
 
-  assert.deepEqual(aggs.T1!.Taxpayers, [{ id: "T1", name: "Alice" }]);
+  assert.deepEqual(aggs.T1!.Taxpayer, [{ id: "T1", name: "Alice" }]);
   assert.deepEqual(aggs.T1!.Orders, [
     { id: "O1", amount: "10" },
     { id: "O3", amount: "30" },
   ]);
 
-  assert.deepEqual(aggs.T2!.Taxpayers, [{ id: "T2", name: "Bob" }]);
+  assert.deepEqual(aggs.T2!.Taxpayer, [{ id: "T2", name: "Bob" }]);
   assert.deepEqual(aggs.T2!.Orders, [{ id: "O2", amount: "20" }]);
 });
 

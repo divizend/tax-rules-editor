@@ -16,11 +16,11 @@ function makeSchema(): BusinessLogicWorkbook {
         parseFn: "(raw) => String(raw)",
         formatFn: "(v) => String(v)",
       },
-      { name: "taxpayerRef", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)", refSheet: "Taxpayers" },
+      { name: "taxpayerRef", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)", refSheet: "Taxpayer" },
     ],
     columns: [
-      { sheet: "Taxpayers", columnName: "id", typeName: "taxpayerId" },
-      { sheet: "Taxpayers", columnName: "name", typeName: "string" },
+      { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
+      { sheet: "Taxpayer", columnName: "name", typeName: "string" },
 
       { sheet: "Customers", columnName: "id", typeName: "string" },
       { sheet: "Customers", columnName: "taxpayerId", typeName: "taxpayerId" },
@@ -34,7 +34,7 @@ function makeSchema(): BusinessLogicWorkbook {
 
 function makeInput(parts: Partial<RawInputWorkbook["sheets"]>): RawInputWorkbook {
   const sheets: RawInputWorkbook["sheets"] = {
-    Taxpayers: [],
+    Taxpayer: [],
     Customers: [],
     Orders: [],
     ...parts,
@@ -53,7 +53,7 @@ function errors(res: ReturnType<typeof parseAndValidateInputWorkbook>) {
 test("missing required sheet is reported", () => {
   const schema = makeSchema();
   const input = makeInput({
-    Taxpayers: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
+    Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
     Customers: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
     // Orders missing
     Orders: [],
@@ -61,7 +61,7 @@ test("missing required sheet is reported", () => {
 
   // Simulate sheet truly missing from workbook read: delete key entirely
   delete (input.sheets as Record<string, unknown>).Orders;
-  input.sheetNames = ["Taxpayers", "Customers"];
+  input.sheetNames = ["Taxpayer", "Customers"];
 
   const res = parseAndValidateInputWorkbook({ schema, input });
   assert.equal(res.ok, false);
@@ -73,7 +73,7 @@ test("missing required sheet is reported", () => {
 test("missing required column is reported", () => {
   const schema = makeSchema();
   const input = makeInput({
-    Taxpayers: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
+    Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
     Customers: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
     Orders: [
       // missing customerId header/value entirely
@@ -98,7 +98,7 @@ test("missing required column is reported", () => {
 test("blank id and duplicate id across sheets are errors", () => {
   const schema = makeSchema();
   const input = makeInput({
-    Taxpayers: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
+    Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
     Customers: [
       { rowNumber: 2, raw: { id: "   ", taxpayerId: "T1" } }, // blank id
       { rowNumber: 3, raw: { id: "DUP", taxpayerId: "T1" } },
@@ -126,7 +126,7 @@ test("blank id and duplicate id across sheets are errors", () => {
 test("fk cell referencing a missing row is an error", () => {
   const schema = makeSchema();
   const input = makeInput({
-    Taxpayers: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
+    Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
     Customers: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
     Orders: [{ rowNumber: 2, raw: { id: "O1", customerId: "C_DOES_NOT_EXIST" } }],
   });
@@ -150,7 +150,7 @@ test("taxpayer resolution: direct taxpayerId column wins", () => {
   schema.columns.push({ sheet: "Orders", columnName: "taxpayerId", typeName: "taxpayerId" });
 
   const input = makeInput({
-    Taxpayers: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
+    Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
     Customers: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
     Orders: [{ rowNumber: 2, raw: { id: "O1", customerId: "C1", taxpayerId: "T1" } }],
   });
@@ -167,7 +167,7 @@ test("taxpayer resolution: indirect via fk chain", () => {
   schema.columns.push({ sheet: "Customers", columnName: "taxpayerRef", typeName: "taxpayerRef" });
 
   const input = makeInput({
-    Taxpayers: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
+    Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
     Customers: [{ rowNumber: 2, raw: { id: "C1", taxpayerRef: "T1" } }],
     Orders: [{ rowNumber: 2, raw: { id: "O1", customerId: "C1" } }],
   });
@@ -185,7 +185,7 @@ test("taxpayer resolution: no path to taxpayer is an error", () => {
       { name: "amount", parseFn: "(raw) => Number(raw)", formatFn: "(v) => String(v)" },
     ],
     columns: [
-      { sheet: "Taxpayers", columnName: "id", typeName: "taxpayerId" },
+      { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
       { sheet: "Orders", columnName: "id", typeName: "string" },
       { sheet: "Orders", columnName: "amount", typeName: "amount" },
     ],
@@ -193,9 +193,9 @@ test("taxpayer resolution: no path to taxpayer is an error", () => {
   };
 
   const input: RawInputWorkbook = {
-    sheetNames: ["Taxpayers", "Orders"],
+    sheetNames: ["Taxpayer", "Orders"],
     sheets: {
-      Taxpayers: [{ rowNumber: 2, raw: { id: "T1" } }],
+      Taxpayer: [{ rowNumber: 2, raw: { id: "T1" } }],
       Orders: [{ rowNumber: 2, raw: { id: "O1", amount: "10" } }],
     },
   };
@@ -224,7 +224,7 @@ test("taxpayer resolution: ambiguous paths produce an error", () => {
       { name: "refB", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)", refSheet: "B" },
     ],
     columns: [
-      { sheet: "Taxpayers", columnName: "id", typeName: "taxpayerId" },
+      { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
       { sheet: "A", columnName: "id", typeName: "string" },
       { sheet: "A", columnName: "taxpayerId", typeName: "taxpayerId" },
       { sheet: "B", columnName: "id", typeName: "string" },
@@ -237,9 +237,9 @@ test("taxpayer resolution: ambiguous paths produce an error", () => {
   };
 
   const input: RawInputWorkbook = {
-    sheetNames: ["Taxpayers", "A", "B", "X"],
+    sheetNames: ["Taxpayer", "A", "B", "X"],
     sheets: {
-      Taxpayers: [
+      Taxpayer: [
         { rowNumber: 2, raw: { id: "T1" } },
         { rowNumber: 3, raw: { id: "T2" } },
       ],
@@ -273,7 +273,7 @@ test("taxpayer resolution: cycles are detected and reported", () => {
       { name: "refB", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)", refSheet: "B" },
     ],
     columns: [
-      { sheet: "Taxpayers", columnName: "id", typeName: "taxpayerId" },
+      { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
       { sheet: "A", columnName: "id", typeName: "string" },
       { sheet: "A", columnName: "bId", typeName: "refB" },
       { sheet: "B", columnName: "id", typeName: "string" },
@@ -283,9 +283,9 @@ test("taxpayer resolution: cycles are detected and reported", () => {
   };
 
   const input: RawInputWorkbook = {
-    sheetNames: ["Taxpayers", "A", "B"],
+    sheetNames: ["Taxpayer", "A", "B"],
     sheets: {
-      Taxpayers: [{ rowNumber: 2, raw: { id: "T1" } }],
+      Taxpayer: [{ rowNumber: 2, raw: { id: "T1" } }],
       A: [{ rowNumber: 2, raw: { id: "A1", bId: "B1" } }],
       B: [{ rowNumber: 2, raw: { id: "B1", aId: "A1" } }],
     },

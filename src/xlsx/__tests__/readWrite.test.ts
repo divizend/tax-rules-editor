@@ -20,13 +20,13 @@ function makeWorkbook(): BusinessLogicWorkbook {
         name: "string",
         parseFn: "(raw) => String(raw)",
         formatFn: "(v) => String(v)",
-        refSheet: "Taxpayers",
+        refSheet: "Taxpayer",
         refColumn: "id",
       },
     ],
     columns: [
-      { sheet: "Taxpayers", columnName: "id", typeName: "taxpayerId" },
-      { sheet: "Taxpayers", columnName: "name", typeName: "string" },
+      { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
+      { sheet: "Taxpayer", columnName: "name", typeName: "string" },
     ],
     rules: [{ name: "ruleA", ruleFn: "(draft) => { draft.x = 1 }" }],
   };
