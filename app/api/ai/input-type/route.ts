@@ -26,6 +26,7 @@ export async function POST(req: Request) {
         "Generate exactly one InputTypes row for an XLSX business-logic workbook. " +
         "Return an object with name, parseFn, formatFn. " +
         "Do not include foreign key information (refSheet/refColumn); those will be added separately by the user. " +
+        "The user prompt is the human-readable description of the type. " +
         "parseFn and formatFn must be JavaScript function expressions (arrow or function expression). " +
         "Keep deterministic; no time/random/network/DOM. parseFn should trim where appropriate.",
       prompt: description,

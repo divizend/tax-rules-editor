@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 
 import type { BusinessLogicWorkbook } from "../domain/schema.js";
 
-const INPUT_TYPES_HEADERS = ["name", "parseFn", "formatFn", "refSheet", "refColumn"] as const;
+const INPUT_TYPES_HEADERS = ["name", "description", "parseFn", "formatFn", "refSheet", "refColumn"] as const;
 const COLUMNS_HEADERS = ["sheet", "columnName", "typeName"] as const;
 const RULES_HEADERS = ["name", "ruleFn"] as const;
 
@@ -26,6 +26,7 @@ export function writeBusinessLogicWorkbook(wb: BusinessLogicWorkbook): ArrayBuff
     [...INPUT_TYPES_HEADERS],
     ...wb.inputTypes.map((it) => [
       it.name,
+      it.description ?? "",
       it.parseFn,
       it.formatFn,
       it.refSheet ?? "",

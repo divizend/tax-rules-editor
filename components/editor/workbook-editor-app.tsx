@@ -322,6 +322,7 @@ export function WorkbookEditorApp(): React.ReactNode {
       ...activeTab.wb.inputTypes,
       {
         name: row.name,
+        description,
         parseFn: row.parseFn,
         formatFn: row.formatFn,
         refSheet: typeof row.refSheet === "string" ? row.refSheet : "",
@@ -601,6 +602,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                 }
                 createRow={() => ({
                   name: "",
+                  description: "",
                   parseFn: "(raw) => raw",
                   formatFn: "(value) => String(value ?? '')",
                   refSheet: "",
@@ -611,6 +613,11 @@ export function WorkbookEditorApp(): React.ReactNode {
                     key: "name",
                     label: "name",
                     placeholder: "e.g. taxpayerId",
+                  },
+                  {
+                    key: "description",
+                    label: "description",
+                    placeholder: "human description",
                   },
                   {
                     key: "parseFn",

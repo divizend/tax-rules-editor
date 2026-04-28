@@ -1,5 +1,6 @@
 export type InputTypeDef = {
   name: string;
+  description?: string;
   /** JS source that evaluates to a function `(raw: unknown) => unknown` */
   parseFn: string;
   /** JS source that evaluates to a function `(value: unknown) => string` */

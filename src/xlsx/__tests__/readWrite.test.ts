@@ -12,6 +12,7 @@ function makeWorkbook(): BusinessLogicWorkbook {
     inputTypes: [
       {
         name: "taxpayerId",
+        description: "Globally unique taxpayer identifier",
         parseFn: "(raw) => String(raw)",
         formatFn: "(v) => String(v)",
       },

@@ -4,7 +4,7 @@ import type { BusinessLogicWorkbook, ColumnDef, InputTypeDef, RuleDef } from "..
 
 type SheetName = "InputTypes" | "Columns" | "Rules";
 
-const INPUT_TYPES_HEADERS = ["name", "parseFn", "formatFn", "refSheet", "refColumn"] as const;
+const INPUT_TYPES_HEADERS = ["name", "description", "parseFn", "formatFn", "refSheet", "refColumn"] as const;
 const COLUMNS_HEADERS = ["sheet", "columnName", "typeName"] as const;
 const RULES_HEADERS = ["name", "ruleFn"] as const;
 
@@ -71,6 +71,7 @@ export function readBusinessLogicWorkbook(arrayBuffer: ArrayBuffer): BusinessLog
         INPUT_TYPES_HEADERS,
       ).map((r) => ({
         name: asTrimmedString(r.name),
+        ...(emptyToUndefined(r.description) ? { description: emptyToUndefined(r.description) } : {}),
         parseFn: asTrimmedString(r.parseFn),
         formatFn: asTrimmedString(r.formatFn),
         ...(emptyToUndefined(r.refSheet) ? { refSheet: emptyToUndefined(r.refSheet) } : {}),
