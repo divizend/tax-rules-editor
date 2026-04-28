@@ -1,31 +1,6 @@
 import type { BusinessLogicWorkbook } from "@/src/domain/schema";
 
-export function createBlankBusinessLogicWorkbook(): BusinessLogicWorkbook {
-  return {
-    inputTypes: [
-      {
-        name: "taxpayerId",
-        parseFn: "(raw) => String(raw ?? '').trim()",
-        formatFn: "(value) => String(value ?? '')",
-      },
-      {
-        name: "string",
-        parseFn: "(raw) => String(raw ?? '')",
-        formatFn: "(value) => String(value ?? '')",
-      },
-      {
-        name: "number",
-        parseFn:
-          "(raw) => {\n  const s = String(raw ?? '').trim();\n  if (s.length === 0) return 0;\n  const n = Number(s);\n  if (!Number.isFinite(n)) throw new Error('Not a number');\n  return n;\n}",
-        formatFn: "(value) => String(value ?? '')",
-      },
-    ],
-    columns: [],
-    rules: [],
-  };
-}
-
-export function createStarterBusinessLogicWorkbook(): BusinessLogicWorkbook {
+export function createNewBusinessLogicWorkbook(): BusinessLogicWorkbook {
   return {
     inputTypes: [
       {
@@ -57,4 +32,7 @@ export function createStarterBusinessLogicWorkbook(): BusinessLogicWorkbook {
     ],
   };
 }
+
+// Backwards-compatible alias (UI should use createNewBusinessLogicWorkbook).
+export const createStarterBusinessLogicWorkbook = createNewBusinessLogicWorkbook;
 
