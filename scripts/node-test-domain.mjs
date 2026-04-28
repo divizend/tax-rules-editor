@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testsRoot = path.join(repoRoot, "src", "domain", "__tests__");
 
 async function listTestFiles(dir) {

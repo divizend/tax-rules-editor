@@ -19,7 +19,7 @@ function collectDuplicateNames(items: Array<{ name: string }>): string[] {
     if (seen.has(name)) dups.add(name);
     seen.add(name);
   }
-  return [...dups];
+  return [...dups].sort();
 }
 
 type ValidationContext = {
@@ -93,7 +93,10 @@ function validateColumns(workbook: BusinessLogicWorkbook, ctx: ValidationContext
 
   if (unknownTypeNames.size > 0) {
     errors.push(
-      sheetError("Columns", `Columns reference unknown input type(s): ${[...unknownTypeNames].join(", ")}`),
+      sheetError(
+        "Columns",
+        `Columns reference unknown input type(s): ${[...unknownTypeNames].sort().join(", ")}`,
+      ),
     );
   }
 
