@@ -584,9 +584,8 @@ export function WorkbookEditorApp(): React.ReactNode {
                 caption="InputTypes sheet"
                 rows={activeTab.wb.inputTypes}
                 headerRight={
-                  <Button
-                    variant="secondary"
-                    size="sm"
+                  <button
+                    type="button"
                     onClick={() =>
                       setAiDialog({
                         kind: "inputType",
@@ -595,9 +594,10 @@ export function WorkbookEditorApp(): React.ReactNode {
                         error: null,
                       })
                     }
+                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
                   >
                     Add AI-generated
-                  </Button>
+                  </button>
                 }
                 createRow={() => ({
                   name: "",
@@ -690,9 +690,8 @@ export function WorkbookEditorApp(): React.ReactNode {
                 caption="Rules sheet"
                 rows={activeTab.wb.rules}
                 headerRight={
-                  <Button
-                    variant="secondary"
-                    size="sm"
+                  <button
+                    type="button"
                     onClick={() =>
                       setAiDialog({
                         kind: "rule",
@@ -701,9 +700,10 @@ export function WorkbookEditorApp(): React.ReactNode {
                         error: null,
                       })
                     }
+                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
                   >
                     Add AI-generated
-                  </Button>
+                  </button>
                 }
                 createRow={() => ({ name: "", ruleFn: "(draft) => {}" })}
                 columns={[
