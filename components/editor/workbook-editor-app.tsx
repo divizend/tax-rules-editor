@@ -346,12 +346,6 @@ export function WorkbookEditorApp(): React.ReactNode {
     })
   }
 
-  function markDirty(tabId: string) {
-    setTabs((prev) =>
-      prev.map((t) => (t.id === tabId ? (t.dirty ? t : { ...t, dirty: true }) : t)),
-    )
-  }
-
   function clearDirty(tabId: string) {
     setTabs((prev) =>
       prev.map((t) => (t.id === tabId ? (t.dirty ? { ...t, dirty: false } : t) : t)),
@@ -1029,7 +1023,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                     }
                     className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
                   >
-                    Add AI-generated
+                    Add with AI
                   </button>
                 }
                 createRow={() => ({
@@ -1130,7 +1124,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                     }
                     className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
                   >
-                    Add table AI-generated
+                    Add table with AI
                   </button>
                   <button
                     type="button"
@@ -1266,7 +1260,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                     }
                     className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
                   >
-                    Add AI-generated
+                    Add with AI
                   </button>
                 }
                 createRow={() => ({ name: "", description: "", ruleFn: "(draft) => {}" })}
