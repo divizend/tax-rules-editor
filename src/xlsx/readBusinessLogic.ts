@@ -4,9 +4,9 @@ import type { BusinessLogicWorkbook, ColumnDef, InputTypeDef, RuleDef } from "..
 
 type SheetName = "InputType" | "Column" | "Rule";
 
-const INPUT_TYPES_HEADERS = ["name", "description", "parseFn", "formatFn", "refSheet", "refColumn"] as const;
-const COLUMNS_HEADERS = ["sheet", "columnName", "typeName"] as const;
-const RULES_HEADERS = ["name", "ruleFn"] as const;
+const INPUT_TYPES_HEADERS = ["name", "description", "parseFn", "formatFn", "ref"] as const;
+const COLUMNS_HEADERS = ["sheet", "columnName", "typeName", "description"] as const;
+const RULES_HEADERS = ["name", "description", "ruleFn"] as const;
 
 function readHeaderRow(sheet: XLSX.WorkSheet): string[] {
   const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false });
@@ -57,51 +57,49 @@ function emptyToUndefined(v: unknown): string | undefined {
   return s.length === 0 ? undefined : s;
 }
 
-function normalizeSheetName(name: string): string {
-  // Singular is canonical, but accept legacy plural forms in workbook content.
-  if (name === "Taxpayers") return "Taxpayer";
-  return name;
-}
-
 export function readBusinessLogicWorkbook(arrayBuffer: ArrayBuffer): BusinessLogicWorkbook {
   const book = XLSX.read(arrayBuffer, { type: "array" });
 
-  // Canonical singular sheet names, but accept legacy plurals on import.
-  const inputTypesSheet = book.Sheets.InputType ?? book.Sheets.InputTypes;
-  const columnsSheet = book.Sheets.Column ?? book.Sheets.Columns;
-  const rulesSheet = book.Sheets.Rule ?? book.Sheets.Rules;
+  const inputTypesSheet = book.Sheets.InputType;
+  const columnsSheet = book.Sheets.Column;
+  const rulesSheet = book.Sheets.Rule;
 
-  const inputTypes: InputTypeDef[] = inputTypesSheet
-    ? sheetToRecords<Record<(typeof INPUT_TYPES_HEADERS)[number], unknown>>(
-        "InputType",
-        inputTypesSheet,
-        INPUT_TYPES_HEADERS,
-      ).map((r) => ({
-        name: asTrimmedString(r.name),
-        ...(emptyToUndefined(r.description) ? { description: emptyToUndefined(r.description) } : {}),
-        parseFn: asTrimmedString(r.parseFn),
-        formatFn: asTrimmedString(r.formatFn),
-        ...(emptyToUndefined(r.refSheet) ? { refSheet: normalizeSheetName(emptyToUndefined(r.refSheet)!) } : {}),
-        ...(emptyToUndefined(r.refColumn) ? { refColumn: emptyToUndefined(r.refColumn) } : {}),
-      }))
-    : [];
+  if (!inputTypesSheet) throw new Error('Missing required sheet "InputType".');
+  if (!columnsSheet) throw new Error('Missing required sheet "Column".');
+  if (!rulesSheet) throw new Error('Missing required sheet "Rule".');
 
-  const columns: ColumnDef[] = columnsSheet
-    ? sheetToRecords<Record<(typeof COLUMNS_HEADERS)[number], unknown>>("Column", columnsSheet, COLUMNS_HEADERS).map(
-        (r) => ({
-          sheet: normalizeSheetName(asTrimmedString(r.sheet)),
-          columnName: asTrimmedString(r.columnName),
-          typeName: asTrimmedString(r.typeName),
-        }),
-      )
-    : [];
+  const inputTypes: InputTypeDef[] = sheetToRecords<Record<(typeof INPUT_TYPES_HEADERS)[number], unknown>>(
+    "InputType",
+    inputTypesSheet,
+    INPUT_TYPES_HEADERS,
+  ).map((r) => ({
+    name: asTrimmedString(r.name),
+    ...(emptyToUndefined(r.description) ? { description: emptyToUndefined(r.description) } : {}),
+    parseFn: asTrimmedString(r.parseFn),
+    formatFn: asTrimmedString(r.formatFn),
+    ...(emptyToUndefined(r.ref) ? { ref: emptyToUndefined(r.ref) } : {}),
+  }));
 
-  const rules: RuleDef[] = rulesSheet
-    ? sheetToRecords<Record<(typeof RULES_HEADERS)[number], unknown>>("Rule", rulesSheet, RULES_HEADERS).map((r) => ({
-        name: asTrimmedString(r.name),
-        ruleFn: asTrimmedString(r.ruleFn),
-      }))
-    : [];
+  const columns: ColumnDef[] = sheetToRecords<Record<(typeof COLUMNS_HEADERS)[number], unknown>>(
+    "Column",
+    columnsSheet,
+    COLUMNS_HEADERS,
+  ).map((r) => ({
+    sheet: asTrimmedString(r.sheet),
+    columnName: asTrimmedString(r.columnName),
+    typeName: asTrimmedString(r.typeName),
+    ...(emptyToUndefined(r.description) ? { description: emptyToUndefined(r.description) } : {}),
+  }));
+
+  const rules: RuleDef[] = sheetToRecords<Record<(typeof RULES_HEADERS)[number], unknown>>(
+    "Rule",
+    rulesSheet,
+    RULES_HEADERS,
+  ).map((r) => ({
+    name: asTrimmedString(r.name),
+    ...(emptyToUndefined(r.description) ? { description: emptyToUndefined(r.description) } : {}),
+    ruleFn: asTrimmedString(r.ruleFn),
+  }));
 
   return { inputTypes, columns, rules };
 }

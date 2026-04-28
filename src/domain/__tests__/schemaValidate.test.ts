@@ -4,19 +4,22 @@ import assert from "node:assert/strict";
 import type { CellError, RuleError, SheetError } from "../errors.js";
 import type { BusinessLogicWorkbook } from "../schema.js";
 import { schemaValidate } from "../schemaValidate.js";
+import { entityIdTypeName } from "../naming";
 
 function makeValidWorkbook(): BusinessLogicWorkbook {
   return {
     inputTypes: [
       {
         name: "taxpayerId",
-        parseFn: "(raw) => raw",
-        formatFn: "(v) => String(v)",
+        description: "Taxpayer primary key",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "Taxpayer",
       },
       {
         name: "string",
-        parseFn: "(raw) => raw",
-        formatFn: "(v) => String(v)",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
       },
     ],
     columns: [
@@ -69,7 +72,6 @@ test("inputTypes must have unique non-empty names", () => {
   const res = schemaValidate(wb);
   assert.equal(res.ok, false);
   assertHasError(res, { sheet: "InputType", severity: "error", message: 'Input types must have a non-empty "name".' });
-  // duplicates message includes the duplicated names, so keep this assertion tolerant
   assert.ok(
     errors(res).some(
       (e) =>
@@ -90,16 +92,20 @@ test("mandatory input type 'taxpayerId' exists", () => {
   assertHasError(res, { sheet: "InputType", severity: "error", message: 'Missing mandatory input type "taxpayerId".' });
 });
 
-test("columns include at least one Taxpayer row", () => {
+test("columns must declare the Taxpayer entity", () => {
   const wb = makeValidWorkbook();
-  wb.columns = [{ sheet: "Other", columnName: "x", typeName: "string" }];
+  wb.columns = [{ sheet: "Other", columnName: "id", typeName: "string" }];
 
   const res = schemaValidate(wb);
   assert.equal(res.ok, false);
-  assertHasError(res, { sheet: "Column", severity: "error", message: 'Columns must include at least one row for sheet "Taxpayer".' });
+  assertHasError(res, {
+    sheet: "Column",
+    severity: "error",
+    message: 'Columns must define at least one entity sheet named "Taxpayer".',
+  });
 });
 
-test("Taxpayer sheet contains id column with typeName taxpayerId", () => {
+test('Taxpayer entity must define column "id" typed as taxpayerId', () => {
   const wb = makeValidWorkbook();
   wb.columns = wb.columns.filter((c) => c.columnName !== "id");
 
@@ -108,7 +114,7 @@ test("Taxpayer sheet contains id column with typeName taxpayerId", () => {
   assertHasError(res1, {
     sheet: "Column",
     severity: "error",
-    message: 'Sheet "Taxpayer" must define column "id" with input type "taxpayerId".',
+    message: 'Entity "Taxpayer" must define column "id" with input type "taxpayerId".',
   });
 
   const wb2 = makeValidWorkbook();
@@ -120,7 +126,7 @@ test("Taxpayer sheet contains id column with typeName taxpayerId", () => {
   assertHasError(res2, {
     sheet: "Column",
     severity: "error",
-    message: 'Sheet "Taxpayer" must define column "id" with input type "taxpayerId".',
+    message: 'Entity "Taxpayer" must define column "id" with input type "taxpayerId".',
   });
 });
 
@@ -143,9 +149,7 @@ test("each ColumnDef.typeName references an existing input type", () => {
 
 test("columns: blank/missing typeName vs unknown typeName are reported separately", () => {
   const wb = makeValidWorkbook();
-  // blank / missing should trigger the dedicated message
   wb.columns.push({ sheet: "Taxpayer", columnName: "blank", typeName: "   " });
-  // unknown non-empty should be listed in the unknown-types error
   wb.columns.push({ sheet: "Taxpayer", columnName: "unknown", typeName: "doesNotExist" });
 
   const res = schemaValidate(wb);
@@ -153,7 +157,6 @@ test("columns: blank/missing typeName vs unknown typeName are reported separatel
 
   assertHasError(res, { sheet: "Column", severity: "error", message: "Column typeName must be a non-empty string." });
 
-  // unknown types should list only non-empty unknown values (no blanks)
   assert.ok(
     errors(res).some(
       (e) =>
@@ -161,6 +164,39 @@ test("columns: blank/missing typeName vs unknown typeName are reported separatel
         e.sheet === "Column" &&
         e.severity === "error" &&
         e.message === "Columns reference unknown input type(s): doesNotExist",
+    ),
+  );
+});
+
+test("entity id input types must exist and match ref binding", () => {
+  const wb = makeValidWorkbook();
+  wb.columns.push({ sheet: "Orders", columnName: "id", typeName: entityIdTypeName("Orders") });
+
+  const missingIdType = schemaValidate(wb);
+  assert.equal(missingIdType.ok, false);
+  assert.ok(
+    errors(missingIdType).some(
+      (e) =>
+        hasSheet(e) &&
+        e.sheet === "InputType" &&
+        e.message.includes(entityIdTypeName("Orders")) &&
+        e.message.includes("Orders"),
+    ),
+  );
+
+  const fixed: BusinessLogicWorkbook = structuredClone(wb);
+  fixed.inputTypes.push({
+    name: entityIdTypeName("Orders"),
+    parseFn: "(raw, _wb) => String(raw ?? '')",
+    formatFn: "(v) => String(v ?? '')",
+    ref: "Orders",
+  });
+
+  const wrongRef = schemaValidate({ ...fixed, inputTypes: [...fixed.inputTypes.map((it) => (it.name === entityIdTypeName("Orders") ? { ...it, ref: "Nope" } : it))] });
+  assert.equal(wrongRef.ok, false);
+  assert.ok(
+    errors(wrongRef).some(
+      (e) => hasSheet(e) && e.sheet === "InputType" && e.message.includes('must have ref "Orders"'),
     ),
   );
 });
@@ -183,4 +219,3 @@ test("rules have unique non-empty names", () => {
     ),
   );
 });
-

@@ -75,11 +75,11 @@ return (typeof parseFn === "function" ? parseFn
   }
 }
 
-export function runParse(source: string, input: string): RunParseResult {
+export function runParse(source: string, input: string, inputWorkbook?: unknown): RunParseResult {
   const compiled = compileSourceToFunction(source);
   if (!compiled.ok) return { ok: false, error: compiled.error };
   try {
-    return { ok: true, value: compiled.fn(input) };
+    return { ok: true, value: compiled.fn(input, inputWorkbook) };
   } catch (e) {
     return { ok: false, error: errToString(e) };
   }
@@ -129,8 +129,12 @@ function handleRequest(msg: WorkerRequestMessage): WorkerResponseMessage {
       return { kind: "res", requestId, ok: true, result };
     }
     case "runParse": {
-      const { source, input } = msg.payload as { source: string; input: string };
-      const result = runParse(source, input);
+      const { source, input, inputWorkbook } = msg.payload as {
+        source: string;
+        input: string;
+        inputWorkbook?: unknown;
+      };
+      const result = runParse(source, input, inputWorkbook);
       return {
         kind: "res",
         requestId,

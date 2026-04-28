@@ -44,6 +44,8 @@ export type RunParseRequest = {
   op: "runParse";
   source: string;
   input: string;
+  /** Second argument passed to parseFns (typically the uploaded input workbook JSON). */
+  inputWorkbook?: unknown;
 };
 
 export type RunParseResult =

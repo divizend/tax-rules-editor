@@ -1,4 +1,5 @@
 import type { BusinessLogicWorkbook, ColumnDef, InputTypeDef } from "./schema.js";
+import { entityIdTypeName } from "./naming";
 import type { CellError, SheetError, ValidationResult } from "./errors.js";
 import type {
   GlobalRowIndexEntry,
@@ -92,17 +93,21 @@ function buildIndices(rowsBySheet: Record<string, RowNode[]>, columnsBySheet: Ma
   return { bySheet: rowsBySheet, idBySheet, bySheetByColumnValue };
 }
 
-function isFkType(it: InputTypeDef | undefined): it is InputTypeDef & { refSheet: string } {
-  return !!it?.refSheet && it.refSheet.trim().length > 0;
+function isFkEdgeColumn(it: InputTypeDef | undefined, col: ColumnDef): it is InputTypeDef & { ref: string } {
+  if (!it?.ref || trim(it.ref).length === 0) return false;
+  const ref = trim(it.ref);
+  // Entity primary-key columns use `${entity}Id` types with `ref: entity`, but they are not FK *edges* for graph traversal.
+  if (trim(col.columnName) === "id" && trim(col.typeName) === entityIdTypeName(ref)) return false;
+  return true;
 }
 
 function resolveFkTargets(
   idx: WorkbookIndex,
-  it: InputTypeDef & { refSheet: string },
+  it: InputTypeDef & { ref: string },
   rawValue: string,
 ): RowNode[] {
-  const refSheet = it.refSheet;
-  const refCol = trim(it.refColumn) || "id";
+  const refSheet = trim(it.ref);
+  const refCol = "id";
   const v = trim(rawValue);
   if (!idx.bySheetByColumnValue[refSheet]?.[refCol]) return [];
   return idx.bySheetByColumnValue[refSheet][refCol]![v] ?? [];
@@ -129,18 +134,17 @@ function resolveTaxpayerForRow(params: {
     return { ok: true, taxpayerId: v };
   }
 
-  const stack: Array<{ node: RowNode; path: RowKey[] }> = [{ node: start, path: [rowKey(start.sheet, start.id)] }];
-  const visited = new Set<RowKey>();
+  const startKey = rowKey(start.sheet, start.id);
+  const stack: Array<{ node: RowNode; pathKeys: Set<RowKey> }> = [
+    { node: start, pathKeys: new Set<RowKey>([startKey]) },
+  ];
 
   const found = new Set<string>();
   const fkExpansionLimit = 10_000; // safety for pathological workbooks
   let expansions = 0;
 
   while (stack.length > 0) {
-    const { node, path } = stack.pop()!;
-    const k = rowKey(node.sheet, node.id);
-    if (visited.has(k)) continue;
-    visited.add(k);
+    const { node, pathKeys } = stack.pop()!;
 
     if (node.sheet === taxpayersSheet) {
       found.add(node.id);
@@ -154,19 +158,19 @@ function resolveTaxpayerForRow(params: {
       if (v.length > 0) found.add(v);
     }
 
-    const nodeFkCols = cols.filter((c) => isFkType(inputTypesByName.get(trim(c.typeName))));
+    const nodeFkCols = cols.filter((c) => isFkEdgeColumn(inputTypesByName.get(trim(c.typeName)), c));
     for (const c of nodeFkCols) {
       const rawValue = trim(node.raw[c.columnName]);
       if (rawValue.length === 0) continue;
       const it = inputTypesByName.get(trim(c.typeName));
-      if (!it || !isFkType(it)) continue;
+      if (!it || !isFkEdgeColumn(it, c)) continue;
 
       const targets = resolveFkTargets(idx, it, rawValue);
       if (targets.length !== 1) continue; // FK errors are handled elsewhere; don't double-report here
 
       const t = targets[0]!;
       const nextKey = rowKey(t.sheet, t.id);
-      if (path.includes(nextKey)) {
+      if (pathKeys.has(nextKey)) {
         return { ok: false, message: "Detected cycle while resolving taxpayer." };
       }
 
@@ -175,7 +179,9 @@ function resolveTaxpayerForRow(params: {
         return { ok: false, message: "Taxpayer resolution exceeded traversal limit." };
       }
 
-      stack.push({ node: t, path: [...path, nextKey] });
+      const nextKeys = new Set(pathKeys);
+      nextKeys.add(nextKey);
+      stack.push({ node: t, pathKeys: nextKeys });
     }
   }
 
@@ -189,11 +195,12 @@ function resolveTaxpayerForRow(params: {
   return { ok: true, taxpayerId: only };
 }
 
-export function parseAndValidateInputWorkbook(params: {
+export async function parseAndValidateInputWorkbook(params: {
   schema: BusinessLogicWorkbook;
   input: RawInputWorkbook;
-}): ValidationResult<ValidatedInputWorkbook> {
-  const { schema, input } = params;
+  jsRunner: Pick<JsRunnerClient, "runParse">;
+}): Promise<ValidationResult<ValidatedInputWorkbook>> {
+  const { schema, input, jsRunner } = params;
   const errors: AnyValidationError[] = [];
 
   const inputTypesByName = new Map<string, InputTypeDef>();
@@ -269,36 +276,46 @@ export function parseAndValidateInputWorkbook(params: {
 
   const idx = buildIndices(rowsBySheetNodes, columnsBySheet);
 
-  // 3) FK integrity
+  // 3) Parse cells via InputType.parseFn(raw, inputWorkbook)
   for (const [sheet, cols] of columnsBySheet) {
     const rows = rowsBySheetNodes[sheet] ?? [];
     for (const c of cols) {
       const it = inputTypesByName.get(trim(c.typeName));
-      if (!isFkType(it)) continue;
+      if (!it) continue;
 
       for (const r of rows) {
-        const rawValue = trim(r.raw[c.columnName]);
-        if (rawValue.length === 0) continue;
-        const targets = resolveFkTargets(idx, it, rawValue);
-        if (targets.length === 1) continue;
-        if (targets.length === 0) {
-          errors.push(
-            cellError(
-              sheet,
-              r.rowNumber,
-              c.columnName,
-              `FK reference "${rawValue}" not found in sheet "${it.refSheet}" (${trim(it.refColumn) || "id"}).`,
-            ),
-          );
-        } else {
-          errors.push(
-            cellError(
-              sheet,
-              r.rowNumber,
-              c.columnName,
-              `FK reference "${rawValue}" is ambiguous in sheet "${it.refSheet}" (${trim(it.refColumn) || "id"}).`,
-            ),
-          );
+        const rawStr = r.raw[c.columnName] ?? "";
+        const res = await jsRunner.runParse(it.parseFn, rawStr, input);
+        if (!res.ok) {
+          errors.push(cellError(sheet, r.rowNumber, c.columnName, `parseFn "${it.name}": ${res.error}`));
+          continue;
+        }
+
+        // Optional FK structural validation for referenced entity ids (beyond parseFn checks)
+        if (isFkEdgeColumn(it, c)) {
+          const rawValue = trim(rawStr);
+          if (rawValue.length === 0) continue;
+          const targets = resolveFkTargets(idx, it, rawValue);
+          if (targets.length === 1) continue;
+          if (targets.length === 0) {
+            errors.push(
+              cellError(
+                sheet,
+                r.rowNumber,
+                c.columnName,
+                `FK reference "${rawValue}" not found in sheet "${trim(it.ref)}" (id).`,
+              ),
+            );
+          } else {
+            errors.push(
+              cellError(
+                sheet,
+                r.rowNumber,
+                c.columnName,
+                `FK reference "${rawValue}" is ambiguous in sheet "${trim(it.ref)}" (id).`,
+              ),
+            );
+          }
         }
       }
     }
@@ -336,15 +353,12 @@ export function parseAndValidateInputWorkbook(params: {
   return { ok: true, value, errors: [] };
 }
 
-/**
- * Future integration point: apply an InputType parse function in the worker.
- * Task 7 only requires the hook to exist; parsing still runs synchronously today.
- */
 export function applyParseFnViaWorker(params: {
   jsRunner: Pick<JsRunnerClient, "runParse">;
   parseFnSource: string;
   input: string;
+  inputWorkbook?: unknown;
 }) {
-  return params.jsRunner.runParse(params.parseFnSource, params.input);
+  return params.jsRunner.runParse(params.parseFnSource, params.input, params.inputWorkbook);
 }
 

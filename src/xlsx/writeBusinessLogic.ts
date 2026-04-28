@@ -2,9 +2,9 @@ import * as XLSX from "xlsx";
 
 import type { BusinessLogicWorkbook } from "../domain/schema.js";
 
-const INPUT_TYPES_HEADERS = ["name", "description", "parseFn", "formatFn", "refSheet", "refColumn"] as const;
-const COLUMNS_HEADERS = ["sheet", "columnName", "typeName"] as const;
-const RULES_HEADERS = ["name", "ruleFn"] as const;
+const INPUT_TYPES_HEADERS = ["name", "description", "parseFn", "formatFn", "ref"] as const;
+const COLUMNS_HEADERS = ["sheet", "columnName", "typeName", "description"] as const;
+const RULES_HEADERS = ["name", "description", "ruleFn"] as const;
 
 function toArrayBuffer(output: unknown): ArrayBuffer {
   if (output instanceof ArrayBuffer) return output;
@@ -29,21 +29,20 @@ export function writeBusinessLogicWorkbook(wb: BusinessLogicWorkbook): ArrayBuff
       it.description ?? "",
       it.parseFn,
       it.formatFn,
-      it.refSheet ?? "",
-      it.refColumn ?? "",
+      it.ref ?? "",
     ]),
   ];
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(inputTypesAoA), "InputType");
 
   const columnsAoA: unknown[][] = [
     [...COLUMNS_HEADERS],
-    ...wb.columns.map((c) => [c.sheet, c.columnName, c.typeName]),
+    ...wb.columns.map((c) => [c.sheet, c.columnName, c.typeName, c.description ?? ""]),
   ];
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(columnsAoA), "Column");
 
   const rulesAoA: unknown[][] = [
     [...RULES_HEADERS],
-    ...wb.rules.map((r) => [r.name, r.ruleFn]),
+    ...wb.rules.map((r) => [r.name, r.description ?? "", r.ruleFn]),
   ];
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rulesAoA), "Rule");
 

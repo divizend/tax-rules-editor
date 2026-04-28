@@ -37,6 +37,10 @@ import { parseAndValidateInputWorkbook } from "@/src/domain/inputParseValidate"
 import { buildAggregates } from "@/src/domain/aggregate"
 import { simulateAll } from "@/src/domain/simulate"
 import { JsRunnerClient } from "@/src/worker/client"
+import { compileSourceToFunction } from "@/src/worker/jsRunner.worker"
+import { entityIdTypeName, nounToPascalCase } from "@/src/domain/naming"
+import { makeEntityIdInputType } from "@/src/domain/entityIdInputType"
+import { ArrowDown, ArrowUp } from "lucide-react"
 
 type AnyErr = ValidationResult<never>["errors"][number]
 
@@ -51,10 +55,11 @@ type WorkbookTab = {
   simResults: Record<string, Aggregate> | null
 }
 
-const LOCAL_STORAGE_KEY = "tax-rules-editor:v1:tabs-state"
+const LOCAL_STORAGE_KEY_V1 = "tax-rules-editor:v1:tabs-state"
+const LOCAL_STORAGE_KEY = "tax-rules-editor:v3:tabs-state"
 
-type PersistedStateV1 = {
-  v: 1
+type PersistedStateV3 = {
+  v: 3
   activeTabId: string | null
   tabs: WorkbookTab[]
 }
@@ -73,6 +78,33 @@ function trim(v: string): string {
   return v.trim()
 }
 
+/** Compact workbook summary for AI routes (column samples; no rule bodies). */
+function buildAiContext(wb: BusinessLogicWorkbook): unknown {
+  const entities = Array.from(
+    new Set(wb.columns.map((c) => trim(c.sheet)).filter(Boolean))
+  )
+  const columnsBySheet = Object.fromEntries(
+    entities.map((sheet) => [
+      sheet,
+      wb.columns
+        .filter((c) => trim(c.sheet) === sheet)
+        .map((c) => ({
+          columnName: trim(c.columnName),
+          typeName: trim(c.typeName),
+        })),
+    ])
+  )
+  return {
+    inputTypes: wb.inputTypes.map((it) => ({
+      name: trim(it.name),
+      description: it.description != null ? trim(it.description) : "",
+      ref: it.ref ? trim(it.ref) : "",
+    })),
+    columnsBySheet,
+    ruleNames: wb.rules.map((r) => trim(r.name)).filter(Boolean),
+  }
+}
+
 async function validateSchemaWithWorkerCompile(params: {
   wb: BusinessLogicWorkbook
   jsRunner: Pick<JsRunnerClient, "compileFunction">
@@ -87,7 +119,7 @@ async function validateSchemaWithWorkerCompile(params: {
       if (!r.ok)
         errors.push({
           severity: "error",
-              sheet: "InputType",
+          sheet: "InputType",
           message: `parseFn "${it.name}": ${r.error}`,
         })
     }
@@ -96,7 +128,7 @@ async function validateSchemaWithWorkerCompile(params: {
       if (!r.ok)
         errors.push({
           severity: "error",
-              sheet: "InputType",
+          sheet: "InputType",
           message: `formatFn "${it.name}": ${r.error}`,
         })
     }
@@ -107,7 +139,7 @@ async function validateSchemaWithWorkerCompile(params: {
       if (!r.ok)
         errors.push({
           severity: "error",
-              sheet: "Rule",
+          sheet: "Rule",
           message: `ruleFn "${r0.name}": ${r.error}`,
         })
     }
@@ -142,6 +174,7 @@ function Panel(props: { children: React.ReactNode }): React.ReactNode {
 export function WorkbookEditorApp(): React.ReactNode {
   const [tabs, setTabs] = React.useState<WorkbookTab[]>([])
   const [activeTabId, setActiveTabId] = React.useState<string | null>(null)
+  const [importBusinessLogicError, setImportBusinessLogicError] = React.useState<string | null>(null)
   const hasRestoredRef = React.useRef(false)
 
   const [jsRunner, setJsRunner] = React.useState<JsRunnerClient | null>(null)
@@ -160,11 +193,17 @@ export function WorkbookEditorApp(): React.ReactNode {
     hasRestoredRef.current = true
 
     try {
+      // Drop v1 storage — schema/workbook shape is not compatible.
+      window.localStorage.removeItem(LOCAL_STORAGE_KEY_V1)
+
       const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
       if (!raw) return
       const parsed = JSON.parse(raw) as unknown
-      const st = parsed as Partial<PersistedStateV1>
-      if (st?.v !== 1) return
+      const st = parsed as Partial<PersistedStateV3>
+      if (st?.v !== 3) {
+        window.localStorage.removeItem(LOCAL_STORAGE_KEY)
+        return
+      }
       if (!Array.isArray(st.tabs)) return
       const restoredTabs = st.tabs.filter(Boolean) as WorkbookTab[]
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -188,7 +227,7 @@ export function WorkbookEditorApp(): React.ReactNode {
     if (typeof window === "undefined") return
     if (!hasRestoredRef.current) return
 
-    const state: PersistedStateV1 = { v: 1, activeTabId, tabs }
+    const state: PersistedStateV3 = { v: 3, activeTabId, tabs }
 
     const write = () => {
       try {
@@ -222,10 +261,33 @@ export function WorkbookEditorApp(): React.ReactNode {
   const schemaErrors = asValidationErrors(activeTab?.schemaValidation ?? null)
   const inputErrors = asValidationErrors(activeTab?.inputValidation ?? null)
 
+  const entitySheetOrder = React.useMemo(() => {
+    const order: string[] = []
+    const seen = new Set<string>()
+    for (const c of activeTab?.wb.columns ?? []) {
+      const s = trim(c.sheet)
+      if (s.length === 0 || seen.has(s)) continue
+      seen.add(s)
+      order.push(s)
+    }
+    return order
+  }, [activeTab?.wb.columns])
+
   const [aiDialog, setAiDialog] = React.useState<null | {
-    kind: "inputType" | "rule"
+    kind: "inputType" | "rule" | "table"
     text: string
     loading: boolean
+    error: string | null
+  }>(null)
+
+  const [addTableDialog, setAddTableDialog] = React.useState<null | {
+    noun: string
+    error: string | null
+  }>(null)
+
+  const [renameTableDialog, setRenameTableDialog] = React.useState<null | {
+    fromEntity: string
+    noun: string
     error: string | null
   }>(null)
 
@@ -267,11 +329,17 @@ export function WorkbookEditorApp(): React.ReactNode {
   }
 
   async function onImportBusinessLogic(file: File) {
-    const buf = await fileToArrayBuffer(file)
-    const next = readBusinessLogicWorkbook(buf)
-    const title =
-      file.name.replace(/\.xlsx$/i, "") || nextUntitledTitle("Workbook")
-    openTab({ title, wb: next })
+    setImportBusinessLogicError(null)
+    try {
+      const buf = await fileToArrayBuffer(file)
+      const next = readBusinessLogicWorkbook(buf)
+      const title =
+        file.name.replace(/\.xlsx$/i, "") || nextUntitledTitle("Workbook")
+      openTab({ title, wb: next })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to import business-logic XLSX."
+      setImportBusinessLogicError(msg)
+    }
   }
 
   async function onUploadFilledTemplate(file: File) {
@@ -293,13 +361,25 @@ export function WorkbookEditorApp(): React.ReactNode {
     )
   }
 
+  function defaultStringInputType(name: string): InputTypeDef {
+    return {
+      name,
+      description: "",
+      parseFn: "(raw, _wb) => String(raw ?? '')",
+      formatFn: "(value) => String(value ?? '')",
+    }
+  }
+
   async function generateInputTypeFromAi(description: string) {
     if (!activeTab) return
     setAiDialog({ kind: "inputType", text: description, loading: true, error: null })
     const res = await fetch("/api/ai/input-type", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ description }),
+      body: JSON.stringify({
+        description,
+        context: buildAiContext(activeTab.wb),
+      }),
     })
     const json: unknown = await res.json().catch(() => null)
     if (!res.ok) {
@@ -322,15 +402,20 @@ export function WorkbookEditorApp(): React.ReactNode {
       setAiDialog((prev) => (prev ? { ...prev, loading: false, error: "AI returned an invalid row." } : prev))
       return
     }
+    const desc =
+      typeof row.description === "string" && row.description.trim().length > 0
+        ? row.description.trim()
+        : description
+    const ref =
+      typeof row.ref === "string" && row.ref.trim().length > 0 ? row.ref.trim() : undefined
     setInputTypes([
       ...activeTab.wb.inputTypes,
       {
         name: row.name,
-        description,
+        description: desc,
         parseFn: row.parseFn,
         formatFn: row.formatFn,
-        refSheet: typeof row.refSheet === "string" ? row.refSheet : "",
-        refColumn: typeof row.refColumn === "string" ? row.refColumn : "",
+        ref,
       },
     ])
     setAiDialog(null)
@@ -342,7 +427,10 @@ export function WorkbookEditorApp(): React.ReactNode {
     const res = await fetch("/api/ai/rule", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ description }),
+      body: JSON.stringify({
+        description,
+        context: buildAiContext(activeTab.wb),
+      }),
     })
     const json: unknown = await res.json().catch(() => null)
     if (!res.ok) {
@@ -362,6 +450,251 @@ export function WorkbookEditorApp(): React.ReactNode {
     }
     setRules([...activeTab.wb.rules, { name: row.name, ruleFn: row.ruleFn }])
     setAiDialog(null)
+  }
+
+  async function generateTableFromAi(description: string) {
+    if (!activeTab) return
+    setAiDialog({ kind: "table", text: description, loading: true, error: null })
+    const res = await fetch("/api/ai/table", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        description,
+        context: buildAiContext(activeTab.wb),
+      }),
+    })
+    const json: unknown = await res.json().catch(() => null)
+    if (!res.ok) {
+      const msg =
+        typeof (json as { error?: unknown } | null)?.error === "string"
+          ? (json as { error: string }).error
+          : "AI request failed."
+      setAiDialog((prev) =>
+        prev ? { ...prev, loading: false, error: msg } : prev
+      )
+      return
+    }
+    const table = (json as { table?: unknown } | null)?.table as
+      | { sheetName?: unknown; columns?: unknown }
+      | undefined
+    if (
+      !table ||
+      typeof table.sheetName !== "string" ||
+      !Array.isArray(table.columns)
+    ) {
+      setAiDialog((prev) =>
+        prev ? { ...prev, loading: false, error: "AI returned an invalid table." } : prev
+      )
+      return
+    }
+
+    const sheetName = table.sheetName.trim()
+    const entities = new Set(activeTab.wb.columns.map((c) => trim(c.sheet)).filter(Boolean))
+    if (entities.has(sheetName)) {
+      setAiDialog((prev) =>
+        prev
+          ? {
+              ...prev,
+              loading: false,
+              error: `Entity "${sheetName}" already exists. Choose a different table name/noun.`,
+            }
+          : prev
+      )
+      return
+    }
+
+    const idTypeName = entityIdTypeName(sheetName)
+    const nextCols: ColumnDef[] = [
+      { sheet: sheetName, columnName: "id", typeName: idTypeName },
+    ]
+    const seenCol = new Set<string>(["id"])
+    for (const c of table.columns) {
+      if (!c || typeof c !== "object") continue
+      const col = c as { columnName?: unknown; typeName?: unknown; description?: unknown }
+      if (
+        typeof col.columnName !== "string" ||
+        typeof col.typeName !== "string" ||
+        typeof col.description !== "string"
+      )
+        continue
+      const cn = col.columnName.trim()
+      if (cn.length === 0 || cn === "id") continue
+      if (seenCol.has(cn)) continue
+      seenCol.add(cn)
+      nextCols.push({
+        sheet: sheetName,
+        columnName: cn,
+        typeName: col.typeName.trim(),
+        description: col.description.trim(),
+      })
+    }
+
+    const existingTypeNames = new Set(
+      activeTab.wb.inputTypes.map((it) => trim(it.name)).filter(Boolean)
+    )
+    const nextInputTypes = [...activeTab.wb.inputTypes]
+
+    if (!existingTypeNames.has(idTypeName)) {
+      nextInputTypes.push(makeEntityIdInputType(sheetName))
+      existingTypeNames.add(idTypeName)
+    }
+
+    const unknownTypes = new Set<string>()
+    for (const c of nextCols) {
+      const t = trim(c.typeName)
+      if (!t) unknownTypes.add(t)
+      else if (!existingTypeNames.has(t)) unknownTypes.add(t)
+    }
+    unknownTypes.delete(idTypeName)
+
+    for (const t of [...unknownTypes].sort()) {
+      if (t.length === 0) continue
+      if (t.endsWith("Id")) {
+        setAiDialog((prev) =>
+          prev
+            ? {
+                ...prev,
+                loading: false,
+                error: `AI invented input type "${t}" ending with "Id" — refusing (would require an explicit entity ref). Regenerate or edit columns.`,
+              }
+            : prev
+        )
+        return
+      }
+      nextInputTypes.push(defaultStringInputType(t))
+      existingTypeNames.add(t)
+    }
+
+    setColumns([...activeTab.wb.columns, ...nextCols])
+    setInputTypes(nextInputTypes)
+    setAiDialog(null)
+  }
+
+  function addManualTable() {
+    if (!activeTab) return
+    setAddTableDialog({ noun: "", error: null })
+  }
+
+  function createManualTableFromDialog() {
+    if (!activeTab || !addTableDialog) return
+    const noun = addTableDialog.noun.trim()
+    if (!noun) {
+      setAddTableDialog((prev) => (prev ? { ...prev, error: "Please enter a noun." } : prev))
+      return
+    }
+
+    const sheetName = nounToPascalCase(noun)
+    if (!sheetName) {
+      setAddTableDialog((prev) =>
+        prev ? { ...prev, error: "Could not derive a sheet name from that noun." } : prev
+      )
+      return
+    }
+
+    const entities = new Set(activeTab.wb.columns.map((c) => trim(c.sheet)).filter(Boolean))
+    if (entities.has(sheetName)) {
+      setAddTableDialog((prev) =>
+        prev ? { ...prev, error: `Entity "${sheetName}" already exists.` } : prev
+      )
+      return
+    }
+
+    const idTypeName = entityIdTypeName(sheetName)
+    const nextInputTypes = [...activeTab.wb.inputTypes]
+    const existingTypeNames = new Set(
+      nextInputTypes.map((it) => trim(it.name)).filter(Boolean)
+    )
+    if (!existingTypeNames.has(idTypeName)) {
+      nextInputTypes.push(makeEntityIdInputType(sheetName))
+    }
+    setInputTypes(nextInputTypes)
+    setColumns([
+      ...activeTab.wb.columns,
+      { sheet: sheetName, columnName: "id", typeName: idTypeName },
+    ])
+    setAddTableDialog(null)
+  }
+
+  function globalColumnIndexForEntity(entity: string, localIndex: number): number {
+    if (!activeTab) return -1
+    let i = 0
+    for (let idx = 0; idx < activeTab.wb.columns.length; idx++) {
+      if (trim(activeTab.wb.columns[idx]!.sheet) !== entity) continue
+      if (i === localIndex) return idx
+      i++
+    }
+    return -1
+  }
+
+  function deleteEntity(entity: string) {
+    if (!activeTab) return
+    if (trim(entity) === "Taxpayer") return
+    const idType = entityIdTypeName(entity)
+    if (
+      !window.confirm(
+        `Delete entity "${entity}"? This removes all Column rows for it and the InputType "${idType}".`
+      )
+    ) {
+      return
+    }
+    setColumns(activeTab.wb.columns.filter((c) => trim(c.sheet) !== entity))
+    setInputTypes(activeTab.wb.inputTypes.filter((it) => trim(it.name) !== idType))
+  }
+
+  function openRenameTable(entity: string) {
+    if (!activeTab) return
+    if (trim(entity) === "Taxpayer") return
+    setRenameTableDialog({ fromEntity: entity, noun: "", error: null })
+  }
+
+  function applyRenameTable() {
+    if (!activeTab || !renameTableDialog) return
+    const fromEntity = trim(renameTableDialog.fromEntity)
+    const noun = renameTableDialog.noun.trim()
+    if (!noun) {
+      setRenameTableDialog((prev) => (prev ? { ...prev, error: "Please enter a noun." } : prev))
+      return
+    }
+
+    const toEntity = nounToPascalCase(noun)
+    if (!toEntity) {
+      setRenameTableDialog((prev) =>
+        prev ? { ...prev, error: "Could not derive a sheet name from that noun." } : prev
+      )
+      return
+    }
+    if (toEntity === fromEntity) {
+      setRenameTableDialog(null)
+      return
+    }
+
+    const entities = new Set(activeTab.wb.columns.map((c) => trim(c.sheet)).filter(Boolean))
+    if (entities.has(toEntity)) {
+      setRenameTableDialog((prev) =>
+        prev ? { ...prev, error: `Entity "${toEntity}" already exists.` } : prev
+      )
+      return
+    }
+
+    const fromIdType = entityIdTypeName(fromEntity)
+    const toIdType = entityIdTypeName(toEntity)
+
+    // 1) Update Column.sheet + any typeName references to the entity id type
+    const nextColumns = activeTab.wb.columns.map((c) => {
+      const nextSheet = trim(c.sheet) === fromEntity ? toEntity : c.sheet
+      const nextTypeName = trim(c.typeName) === fromIdType ? toIdType : c.typeName
+      return { ...c, sheet: nextSheet, typeName: nextTypeName }
+    })
+
+    // 2) Update the entity id InputType row (name/ref/parseFn/description), and any typeName references via columns already handled above
+    const nextInputTypes = activeTab.wb.inputTypes.map((it) => {
+      if (trim(it.name) !== fromIdType) return it
+      return makeEntityIdInputType(toEntity)
+    })
+
+    setColumns(nextColumns)
+    setInputTypes(nextInputTypes)
+    setRenameTableDialog(null)
   }
 
   async function onValidateAndSimulate() {
@@ -408,9 +741,10 @@ export function WorkbookEditorApp(): React.ReactNode {
       return
     }
 
-    const inputRes = parseAndValidateInputWorkbook({
+    const inputRes = await parseAndValidateInputWorkbook({
       schema: activeTab.wb,
       input: activeTab.rawInput,
+      jsRunner,
     })
     setTabs((prev) =>
       prev.map((t) =>
@@ -465,10 +799,27 @@ export function WorkbookEditorApp(): React.ReactNode {
         <div className="flex flex-col gap-2">
           <h1 className="text-lg font-semibold">XLSX Tax Rules Editor</h1>
           <div className="text-sm text-muted-foreground">
-            Client-side v1. Create/import business-logic, generate templates,
+            Client-side v3. Create/import business-logic, generate templates,
             upload filled templates, run simulation in a worker.
           </div>
         </div>
+
+        {importBusinessLogicError ? (
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            <div className="min-w-0">
+              <div className="font-medium">Import failed</div>
+              <div className="whitespace-pre-wrap break-words">{importBusinessLogicError}</div>
+            </div>
+              <Button
+              type="button"
+              size="sm"
+                variant="secondary"
+              onClick={() => setImportBusinessLogicError(null)}
+            >
+              Dismiss
+              </Button>
+          </div>
+        ) : null}
 
         {tabs.length > 0 ? (
           <div className="flex items-center gap-2 overflow-x-auto rounded-xl border bg-background p-2">
@@ -555,9 +906,9 @@ export function WorkbookEditorApp(): React.ReactNode {
               title="Workbook"
               right={
                 <>
-                  <Button
+              <Button
                     variant="secondary"
-                    onClick={() => {
+                onClick={() => {
                       closeTab(activeTab.id)
                     }}
                   >
@@ -571,21 +922,21 @@ export function WorkbookEditorApp(): React.ReactNode {
                         data,
                         filename: `${activeTab.title || "business-logic"}.xlsx`,
                       })
-                    }}
-                  >
-                    Export XLSX
-                  </Button>
-                </>
-              }
-            >
-              <div className="text-sm text-muted-foreground">
+                }}
+              >
+                Export XLSX
+              </Button>
+            </>
+          }
+        >
+          <div className="text-sm text-muted-foreground">
                 Business-logic workbook loaded. Edit the three sheets in-place,
                 then export, generate template, and run the simulation.
-              </div>
-            </Section>
+          </div>
+        </Section>
 
             <Panel>
-              <SimpleTable<InputTypeDef>
+          <SimpleTable<InputTypeDef>
                 caption="InputType sheet"
                 rows={activeTab.wb.inputTypes}
                 headerRight={
@@ -607,12 +958,10 @@ export function WorkbookEditorApp(): React.ReactNode {
                 createRow={() => ({
                   name: "",
                   description: "",
-                  parseFn: "(raw) => raw",
+                  parseFn: "(raw, _wb) => raw",
                   formatFn: "(value) => String(value ?? '')",
-                  refSheet: "",
-                  refColumn: "",
                 })}
-                columns={[
+            columns={[
                   {
                     key: "name",
                     label: "name",
@@ -622,12 +971,13 @@ export function WorkbookEditorApp(): React.ReactNode {
                     key: "description",
                     label: "description",
                     placeholder: "human description",
+                    display: "wrap",
                   },
                   {
                     key: "parseFn",
                     label: "parseFn",
                     kind: "textarea",
-                    placeholder: "(raw) => ...",
+                    placeholder: "(raw, inputWorkbook) => ...",
                   },
                   {
                     key: "formatFn",
@@ -635,17 +985,36 @@ export function WorkbookEditorApp(): React.ReactNode {
                     kind: "textarea",
                     placeholder: "(value) => String(value)",
                   },
-                  {
-                    key: "refSheet",
-                    label: "refSheet",
-                    placeholder: "optional FK sheet",
-                  },
-                  {
-                    key: "refColumn",
-                    label: "refColumn",
-                    placeholder: "optional FK column",
-                  },
                 ]}
+                validateDraft={({ mode, draft, editingIdx }) => {
+                  const name = trim(draft.name)
+                  if (name.length === 0) return "name is required"
+
+                  const existing = activeTab.wb.inputTypes
+                    .map((it, idx) => ({ name: trim(it.name), idx }))
+                    .filter((x) => x.name.length > 0)
+                  const nameTaken = existing.some((x) => x.name === name && (mode === "add" || x.idx !== editingIdx))
+                  if (nameTaken) return `name "${name}" already exists`
+
+                  const parseFn = draft.parseFn ?? ""
+                  const formatFn = draft.formatFn ?? ""
+                  const parseCheck = compileSourceToFunction(parseFn)
+                  if (!parseCheck.ok) return `parseFn is not valid JS: ${parseCheck.error}`
+                  const formatCheck = compileSourceToFunction(formatFn)
+                  if (!formatCheck.ok) return `formatFn is not valid JS: ${formatCheck.error}`
+                  return null
+                }}
+                canDeleteRow={(row) => {
+                  if (trim(row.name) === "taxpayerId") return false
+                  if (row.ref != null && trim(row.ref).length > 0) return false
+                  return true
+                }}
+                canEditRow={(row) => {
+                  // Entity-bound id types + taxpayerId are protected (must stay consistent with Column.sheet entities).
+                  if (trim(row.name) === "taxpayerId") return false
+                  if (row.ref != null && trim(row.ref).length > 0) return false
+                  return true
+                }}
                 onChangeRow={(idx, next) =>
                   setInputTypes(
                     activeTab.wb.inputTypes.map((r, i) =>
@@ -663,41 +1032,142 @@ export function WorkbookEditorApp(): React.ReactNode {
             </Panel>
 
             <Panel>
-              <SimpleTable<ColumnDef>
-                caption="Column sheet"
-                rows={activeTab.wb.columns}
-                createRow={() => ({ sheet: "", columnName: "", typeName: "" })}
-                columns={[
-                  {
-                    key: "sheet",
-                    label: "sheet",
-                    placeholder: "e.g. Taxpayer",
-                  },
-                  {
-                    key: "columnName",
-                    label: "columnName",
-                    placeholder: "e.g. id",
-                  },
-                  {
-                    key: "typeName",
-                    label: "typeName",
-                    placeholder: "e.g. taxpayerId",
-                  },
-                ]}
-                onChangeRow={(idx, next) =>
-                  setColumns(
-                    activeTab.wb.columns.map((r, i) => (i === idx ? next : r))
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm font-medium">Column sheet</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAiDialog({
+                        kind: "table",
+                        text: "",
+                        loading: false,
+                        error: null,
+                      })
+                    }
+                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                  >
+                    Add table AI-generated
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addManualTable}
+                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                  >
+                    Add table
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                {entitySheetOrder.map((entity) => {
+                  const rows = activeTab.wb.columns.filter((c) => trim(c.sheet) === entity)
+                  return (
+                    <div key={entity} className="rounded-lg border p-3">
+                      <SimpleTable<ColumnDef>
+                        caption={entity}
+                        headerRight={
+                          trim(entity) === "Taxpayer" ? null : (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openRenameTable(entity)}
+                                className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                              >
+                                Rename table
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteEntity(entity)}
+                                className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                              >
+                                Delete table
+                              </button>
+                            </div>
+                          )
+                        }
+                        addLabel="Add column"
+                        rows={rows}
+                        createRow={() => ({
+                          sheet: entity,
+                          columnName: "",
+                          typeName: "",
+                          description: "",
+                        })}
+            columns={[
+                          {
+                            key: "columnName",
+                            label: "columnName",
+                            placeholder: "e.g. amount",
+                          },
+                          {
+                            key: "typeName",
+                            label: "typeName",
+                            kind: "select",
+                            placeholder: "Select an InputType…",
+                            options: () =>
+                              activeTab.wb.inputTypes
+                                .map((it) => trim(it.name))
+                                .filter(Boolean)
+                                .sort((a, b) => a.localeCompare(b)),
+                          },
+                          {
+                            key: "description",
+                            label: "description",
+                            placeholder: "human description",
+                            display: "wrap",
+                          },
+                        ]}
+                        validateDraft={({ mode, draft, editingIdx }) => {
+                          const columnName = trim(draft.columnName)
+                          if (columnName.length === 0) return "columnName is required"
+                          const globalEditingIdx =
+                            mode === "edit" && editingIdx != null
+                              ? globalColumnIndexForEntity(entity, editingIdx)
+                              : -1
+                          const exists = activeTab.wb.columns.some((c, idx) => {
+                            if (trim(c.sheet) !== entity) return false
+                            if (trim(c.columnName) !== columnName) return false
+                            if (mode === "edit" && idx === globalEditingIdx) return false
+                            return true
+                          })
+                          if (exists) return `columnName "${columnName}" already exists`
+
+                          const typeName = trim(draft.typeName)
+                          if (typeName.length === 0) return "typeName is required"
+                          const knownTypes = new Set(
+                            activeTab.wb.inputTypes.map((it) => trim(it.name)).filter(Boolean)
+                          )
+                          if (!knownTypes.has(typeName))
+                            return `typeName "${typeName}" does not exist in InputType sheet`
+                          return null
+                        }}
+                        canDeleteRow={(row) => trim(row.columnName) !== "id"}
+                        canEditRow={(row) => trim(row.columnName) !== "id"}
+                        onChangeRow={(localIdx, next) => {
+                          const g = globalColumnIndexForEntity(entity, localIdx)
+                          if (g < 0) return
+                          setColumns(
+                            activeTab.wb.columns.map((r, i) => (i === g ? next : r))
+                          )
+                        }}
+                        onAddRow={(row) =>
+                          setColumns([...activeTab.wb.columns, row])
+                        }
+                        onDeleteRow={(localIdx) => {
+                          const g = globalColumnIndexForEntity(entity, localIdx)
+                          if (g < 0) return
+                          setColumns(activeTab.wb.columns.filter((_, i) => i !== g))
+                        }}
+                      />
+                    </div>
                   )
-                }
-                onAddRow={(row) => setColumns([...activeTab.wb.columns, row])}
-                onDeleteRow={(idx) =>
-                  setColumns(activeTab.wb.columns.filter((_, i) => i !== idx))
-                }
-              />
+                })}
+              </div>
             </Panel>
 
             <Panel>
-              <SimpleTable<RuleDef>
+          <SimpleTable<RuleDef>
                 caption="Rule sheet"
                 rows={activeTab.wb.rules}
                 headerRight={
@@ -716,12 +1186,18 @@ export function WorkbookEditorApp(): React.ReactNode {
                     Add AI-generated
                   </button>
                 }
-                createRow={() => ({ name: "", ruleFn: "(draft) => {}" })}
-                columns={[
+                createRow={() => ({ name: "", description: "", ruleFn: "(draft) => {}" })}
+            columns={[
                   {
                     key: "name",
                     label: "name",
                     placeholder: "e.g. computeTotals",
+                  },
+                  {
+                    key: "description",
+                    label: "description",
+                    placeholder: "human description",
+                    display: "wrap",
                   },
                   {
                     key: "ruleFn",
@@ -730,6 +1206,54 @@ export function WorkbookEditorApp(): React.ReactNode {
                     placeholder: "(draft) => { ... }",
                   },
                 ]}
+                validateDraft={({ mode, draft, editingIdx }) => {
+                  const name = trim(draft.name)
+                  if (name.length === 0) return "name is required"
+                  const existing = activeTab.wb.rules
+                    .map((r, idx) => ({ name: trim(r.name), idx }))
+                    .filter((x) => x.name.length > 0)
+                  const nameTaken = existing.some((x) => x.name === name && (mode === "add" || x.idx !== editingIdx))
+                  if (nameTaken) return `name "${name}" already exists`
+
+                  const ruleFn = draft.ruleFn ?? ""
+                  const ruleCheck = compileSourceToFunction(ruleFn)
+                  if (!ruleCheck.ok) return `ruleFn is not valid JS: ${ruleCheck.error}`
+                  return null
+                }}
+                rowActions={(_row, idx) => (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (idx <= 0) return
+                        const next = [...activeTab.wb.rules]
+                        ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+                        setRules(next)
+                      }}
+                      disabled={idx <= 0}
+                      className="rounded-md border p-1.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Move up"
+                      aria-label="Move up"
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (idx >= activeTab.wb.rules.length - 1) return
+                        const next = [...activeTab.wb.rules]
+                        ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
+                        setRules(next)
+                      }}
+                      disabled={idx >= activeTab.wb.rules.length - 1}
+                      className="rounded-md border p-1.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Move down"
+                      aria-label="Move down"
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </button>
+                  </>
+                )}
                 onChangeRow={(idx, next) =>
                   setRules(
                     activeTab.wb.rules.map((r, i) => (i === idx ? next : r))
@@ -742,29 +1266,29 @@ export function WorkbookEditorApp(): React.ReactNode {
               />
             </Panel>
 
-            <Section
-              title="Template + Simulation"
-              right={
-                <>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
+        <Section
+          title="Template + Simulation"
+          right={
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => {
                       const data = generateTemplate(activeTab.wb)
                       downloadArrayBuffer({
                         data,
                         filename: `${activeTab.title || "template"}.template.xlsx`,
                       })
-                    }}
-                  >
-                    Generate template XLSX
-                  </Button>
+                }}
+              >
+                Generate template XLSX
+              </Button>
 
-                  <label className="inline-flex cursor-pointer items-center gap-2">
-                    <input
-                      type="file"
-                      accept={fileInputAcceptXlsx()}
-                      className="hidden"
-                      onChange={(e) => {
+              <label className="inline-flex cursor-pointer items-center gap-2">
+                <input
+                  type="file"
+                  accept={fileInputAcceptXlsx()}
+                  className="hidden"
+                  onChange={(e) => {
                         const f = e.target.files?.[0]
                         if (!f) return
                         void onUploadFilledTemplate(f)
@@ -774,34 +1298,34 @@ export function WorkbookEditorApp(): React.ReactNode {
                     <span className={buttonVariants({ variant: "secondary" })}>
                       Upload filled template
                     </span>
-                  </label>
+              </label>
 
                   <Button
                     disabled={!jsRunner}
                     onClick={() => void onValidateAndSimulate()}
                   >
-                    Validate + Run sim
-                  </Button>
-                </>
-              }
-            >
-              <div className="flex flex-col gap-3">
-                <div className="text-sm text-muted-foreground">
-                  Uploaded input workbook:{" "}
+                Validate + Run sim
+              </Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <div className="text-sm text-muted-foreground">
+              Uploaded input workbook:{" "}
                   <span className="font-mono">
                     {activeTab.rawInput
                       ? `${activeTab.rawInput.sheetNames.length} sheet(s)`
                       : "none"}
                   </span>
-                </div>
-                <SimResults
-                  schemaErrors={schemaErrors}
-                  inputErrors={inputErrors}
+            </div>
+            <SimResults
+              schemaErrors={schemaErrors}
+              inputErrors={inputErrors}
                   simErrors={activeTab.simErrors}
                   results={activeTab.simResults}
-                />
-              </div>
-            </Section>
+            />
+          </div>
+        </Section>
           </>
         ) : (
           <Section title="Start">
@@ -858,8 +1382,10 @@ export function WorkbookEditorApp(): React.ReactNode {
               <div className="text-sm font-medium">
                 {aiDialog.kind === "inputType"
                   ? "AI-generate Input Type"
-                  : "AI-generate Rule"}
-              </div>
+                  : aiDialog.kind === "rule"
+                    ? "AI-generate Rule"
+                    : "AI-generate Table"}
+    </div>
               <Button
                 variant="secondary"
                 size="sm"
@@ -885,7 +1411,9 @@ export function WorkbookEditorApp(): React.ReactNode {
                   placeholder={
                     aiDialog.kind === "inputType"
                       ? "Example: A type 'currency' that parses '12.34' and formats with two decimals."
-                      : "Example: Sum all Orders.amount into draft.ComputedTotals[0].total."
+                      : aiDialog.kind === "rule"
+                        ? "Example: Sum all Orders.amount into draft.ComputedTotals[0].total."
+                        : "Example: A new Invoices table with customerId, issueDate, and amount columns."
                   }
                 />
               </label>
@@ -906,11 +1434,145 @@ export function WorkbookEditorApp(): React.ReactNode {
                   const desc = aiDialog.text.trim()
                   if (aiDialog.kind === "inputType")
                     void generateInputTypeFromAi(desc)
-                  else void generateRuleFromAi(desc)
+                  else if (aiDialog.kind === "rule") void generateRuleFromAi(desc)
+                  else void generateTableFromAi(desc)
                 }}
                 disabled={aiDialog.loading || aiDialog.text.trim().length === 0}
               >
                 {aiDialog.loading ? "Generating…" : "Generate"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {addTableDialog ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setAddTableDialog(null)
+          }}
+        >
+          <div className="w-full max-w-lg rounded-xl border bg-background shadow-lg">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-sm font-medium">Add table</div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setAddTableDialog(null)}
+              >
+                Close
+              </Button>
+            </div>
+            <div className="flex flex-col gap-3 p-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Singular noun
+                </span>
+                <input
+                  value={addTableDialog.noun}
+                  onChange={(e) =>
+                    setAddTableDialog((prev) =>
+                      prev ? { ...prev, noun: e.target.value, error: null } : prev
+                    )
+                  }
+                  className="w-full rounded-md border bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
+                  placeholder="e.g. invoice"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      createManualTableFromDialog()
+                    }
+                  }}
+                />
+              </label>
+              <div className="text-xs text-muted-foreground">
+                We will derive the entity name (PascalCase) and create the required{" "}
+                <span className="font-mono">id</span> column.
+              </div>
+              {addTableDialog.error ? (
+                <div className="text-sm text-destructive">{addTableDialog.error}</div>
+              ) : null}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t p-4">
+              <Button variant="secondary" onClick={() => setAddTableDialog(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => createManualTableFromDialog()}
+                disabled={addTableDialog.noun.trim().length === 0}
+              >
+                Create
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {renameTableDialog ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setRenameTableDialog(null)
+          }}
+        >
+          <div className="w-full max-w-lg rounded-xl border bg-background shadow-lg">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-sm font-medium">Rename table</div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setRenameTableDialog(null)}
+              >
+                Close
+              </Button>
+            </div>
+            <div className="flex flex-col gap-3 p-4">
+              <div className="text-xs text-muted-foreground">
+                Renaming{" "}
+                <span className="font-mono">{renameTableDialog.fromEntity}</span>
+              </div>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  New singular noun
+                </span>
+                <input
+                  value={renameTableDialog.noun}
+                  onChange={(e) =>
+                    setRenameTableDialog((prev) =>
+                      prev ? { ...prev, noun: e.target.value, error: null } : prev
+                    )
+                  }
+                  className="w-full rounded-md border bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
+                  placeholder="e.g. invoice"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      applyRenameTable()
+                    }
+                  }}
+                />
+              </label>
+              <div className="text-xs text-muted-foreground">
+                This updates the table name and the corresponding id type (including all references).
+              </div>
+              {renameTableDialog.error ? (
+                <div className="text-sm text-destructive">{renameTableDialog.error}</div>
+              ) : null}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t p-4">
+              <Button variant="secondary" onClick={() => setRenameTableDialog(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => applyRenameTable()}
+                disabled={renameTableDialog.noun.trim().length === 0}
+              >
+                Rename
               </Button>
             </div>
           </div>

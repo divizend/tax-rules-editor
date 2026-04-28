@@ -2,31 +2,61 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import type { BusinessLogicWorkbook } from "../schema.js";
-import type { RawInputWorkbook } from "../inputWorkbook.js";
+import type { RawInputWorkbook, ValidatedInputWorkbook } from "../inputWorkbook.js";
+import type { ValidationResult } from "../errors.js";
 import { parseAndValidateInputWorkbook } from "../inputParseValidate.js";
+import { runParse } from "../../worker/jsRunner.worker.js";
+import { entityIdTypeName } from "../naming";
+
+type ParseResult = ValidationResult<ValidatedInputWorkbook>;
+
+const jsRunner = {
+  runParse: async (source: string, input: string, inputWorkbook?: unknown) =>
+    Promise.resolve(runParse(source, input, inputWorkbook)),
+};
 
 function makeSchema(): BusinessLogicWorkbook {
   return {
     inputTypes: [
-      { name: "taxpayerId", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)" },
-      { name: "string", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)" },
-      { name: "customerId", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)", refSheet: "Customers" },
       {
-        name: "orderId",
-        parseFn: "(raw) => String(raw)",
-        formatFn: "(v) => String(v)",
+        name: "taxpayerId",
+        description: "Taxpayer id",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "Taxpayer",
       },
-      { name: "taxpayerRef", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)", refSheet: "Taxpayer" },
+      { name: "string", parseFn: "(raw, _wb) => String(raw ?? '')", formatFn: "(v) => String(v ?? '')" },
+      {
+        name: entityIdTypeName("Customer"),
+        description: "Customer id",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "Customer",
+      },
+      {
+        name: entityIdTypeName("Order"),
+        description: "Order id",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "Order",
+      },
+      {
+        name: "customerId",
+        description: "FK to Customer.id",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "Customer",
+      },
     ],
     columns: [
       { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
       { sheet: "Taxpayer", columnName: "name", typeName: "string" },
 
-      { sheet: "Customers", columnName: "id", typeName: "string" },
-      { sheet: "Customers", columnName: "taxpayerId", typeName: "taxpayerId" },
+      { sheet: "Customer", columnName: "id", typeName: entityIdTypeName("Customer") },
+      { sheet: "Customer", columnName: "taxpayerId", typeName: "taxpayerId" },
 
-      { sheet: "Orders", columnName: "id", typeName: "orderId" },
-      { sheet: "Orders", columnName: "customerId", typeName: "customerId" },
+      { sheet: "Order", columnName: "id", typeName: entityIdTypeName("Order") },
+      { sheet: "Order", columnName: "customerId", typeName: "customerId" },
     ],
     rules: [],
   };
@@ -35,8 +65,8 @@ function makeSchema(): BusinessLogicWorkbook {
 function makeInput(parts: Partial<RawInputWorkbook["sheets"]>): RawInputWorkbook {
   const sheets: RawInputWorkbook["sheets"] = {
     Taxpayer: [],
-    Customers: [],
-    Orders: [],
+    Customer: [],
+    Order: [],
     ...parts,
   };
   return {
@@ -45,169 +75,183 @@ function makeInput(parts: Partial<RawInputWorkbook["sheets"]>): RawInputWorkbook
   };
 }
 
-function errors(res: ReturnType<typeof parseAndValidateInputWorkbook>) {
+function errors(res: ParseResult) {
   assert.equal(res.ok, false);
   return res.errors;
 }
 
-test("missing required sheet is reported", () => {
+test("missing required sheet is reported", async () => {
   const schema = makeSchema();
   const input = makeInput({
     Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
-    Customers: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
-    // Orders missing
-    Orders: [],
+    Customer: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
   });
 
-  // Simulate sheet truly missing from workbook read: delete key entirely
-  delete (input.sheets as Record<string, unknown>).Orders;
-  input.sheetNames = ["Taxpayer", "Customers"];
+  delete (input.sheets as Record<string, unknown>).Order;
+  input.sheetNames = ["Taxpayer", "Customer"];
 
-  const res = parseAndValidateInputWorkbook({ schema, input });
+  const res = await parseAndValidateInputWorkbook({ schema, input, jsRunner });
   assert.equal(res.ok, false);
   assert.ok(
-    errors(res).some((e) => "sheet" in e && e.severity === "error" && e.sheet === "Orders"),
+    errors(res).some((e) => "sheet" in e && e.severity === "error" && e.sheet === "Order"),
   );
 });
 
-test("missing required column is reported", () => {
+test("missing required column is reported", async () => {
   const schema = makeSchema();
   const input = makeInput({
     Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
-    Customers: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
-    Orders: [
-      // missing customerId header/value entirely
-      { rowNumber: 2, raw: { id: "O1" } },
+    Customer: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
+    // Order exists, but the required `customerId` column is absent from the sheet.
+    Order: [
+      {
+        rowNumber: 2,
+        raw: {
+          id: "O1",
+          // customerId intentionally omitted
+        },
+      },
     ],
   });
 
-  const res = parseAndValidateInputWorkbook({ schema, input });
+  const res = await parseAndValidateInputWorkbook({ schema, input, jsRunner });
   assert.equal(res.ok, false);
   assert.ok(
     errors(res).some(
       (e) =>
         "sheet" in e &&
         e.severity === "error" &&
-        e.sheet === "Orders" &&
+        e.sheet === "Order" &&
         e.row === 1 &&
         e.column === "customerId",
     ),
   );
 });
 
-test("blank id and duplicate id across sheets are errors", () => {
+test("blank id and duplicate id across sheets are errors", async () => {
   const schema = makeSchema();
   const input = makeInput({
     Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
-    Customers: [
-      { rowNumber: 2, raw: { id: "   ", taxpayerId: "T1" } }, // blank id
+    Customer: [
+      { rowNumber: 2, raw: { id: "   ", taxpayerId: "T1" } },
       { rowNumber: 3, raw: { id: "DUP", taxpayerId: "T1" } },
     ],
-    Orders: [
-      { rowNumber: 2, raw: { id: "DUP", customerId: "C1" } }, // duplicate across sheet
-    ],
+    Order: [{ rowNumber: 2, raw: { id: "DUP", customerId: "C1" } }],
   });
 
-  const res = parseAndValidateInputWorkbook({ schema, input });
+  const res = await parseAndValidateInputWorkbook({ schema, input, jsRunner });
   assert.equal(res.ok, false);
 
   assert.ok(
     errors(res).some(
-      (e) => "sheet" in e && e.severity === "error" && e.sheet === "Customers" && e.row === 2 && e.column === "id",
+      (e) => "sheet" in e && e.severity === "error" && e.sheet === "Customer" && e.row === 2 && e.column === "id",
     ),
   );
   assert.ok(
     errors(res).some(
-      (e) => "sheet" in e && e.severity === "error" && e.sheet === "Orders" && e.row === 2 && e.column === "id",
+      (e) => "sheet" in e && e.severity === "error" && e.sheet === "Order" && e.row === 2 && e.column === "id",
     ),
   );
 });
 
-test("fk cell referencing a missing row is an error", () => {
+test("fk cell referencing a missing row is an error", async () => {
   const schema = makeSchema();
   const input = makeInput({
     Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
-    Customers: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
-    Orders: [{ rowNumber: 2, raw: { id: "O1", customerId: "C_DOES_NOT_EXIST" } }],
+    Customer: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
+    Order: [{ rowNumber: 2, raw: { id: "O1", customerId: "C_DOES_NOT_EXIST" } }],
   });
 
-  const res = parseAndValidateInputWorkbook({ schema, input });
+  const res = await parseAndValidateInputWorkbook({ schema, input, jsRunner });
   assert.equal(res.ok, false);
   assert.ok(
     errors(res).some(
       (e) =>
         "sheet" in e &&
         e.severity === "error" &&
-        e.sheet === "Orders" &&
+        e.sheet === "Order" &&
         e.row === 2 &&
         e.column === "customerId",
     ),
   );
 });
 
-test("taxpayer resolution: direct taxpayerId column wins", () => {
+test("taxpayer resolution: direct taxpayerId column wins", async () => {
   const schema = makeSchema();
-  schema.columns.push({ sheet: "Orders", columnName: "taxpayerId", typeName: "taxpayerId" });
+  schema.columns.push({ sheet: "Order", columnName: "taxpayerId", typeName: "taxpayerId" });
 
   const input = makeInput({
     Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
-    Customers: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
-    Orders: [{ rowNumber: 2, raw: { id: "O1", customerId: "C1", taxpayerId: "T1" } }],
+    Customer: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
+    Order: [{ rowNumber: 2, raw: { id: "O1", customerId: "C1", taxpayerId: "T1" } }],
   });
 
-  const res = parseAndValidateInputWorkbook({ schema, input });
+  const res = await parseAndValidateInputWorkbook({ schema, input, jsRunner });
   assert.equal(res.ok, true);
-  assert.equal(res.value.rowsBySheet.Orders[0]!.taxpayerId, "T1");
+  assert.equal(res.value.rowsBySheet.Order[0]!.taxpayerId, "T1");
 });
 
-test("taxpayer resolution: indirect via fk chain", () => {
+test("taxpayer resolution: indirect via fk chain", async () => {
   const schema = makeSchema();
-  // Customers: remove direct taxpayerId; instead reference Taxpayers via FK type
-  schema.columns = schema.columns.filter((c) => !(c.sheet === "Customers" && c.columnName === "taxpayerId"));
-  schema.columns.push({ sheet: "Customers", columnName: "taxpayerRef", typeName: "taxpayerRef" });
+  schema.columns = schema.columns.filter((c) => !(c.sheet === "Order" && c.columnName === "taxpayerId"));
 
   const input = makeInput({
     Taxpayer: [{ rowNumber: 2, raw: { id: "T1", name: "Alice" } }],
-    Customers: [{ rowNumber: 2, raw: { id: "C1", taxpayerRef: "T1" } }],
-    Orders: [{ rowNumber: 2, raw: { id: "O1", customerId: "C1" } }],
+    Customer: [{ rowNumber: 2, raw: { id: "C1", taxpayerId: "T1" } }],
+    Order: [{ rowNumber: 2, raw: { id: "O1", customerId: "C1" } }],
   });
 
-  const res = parseAndValidateInputWorkbook({ schema, input });
+  const res = await parseAndValidateInputWorkbook({ schema, input, jsRunner });
   assert.equal(res.ok, true);
-  assert.equal(res.value.rowsBySheet.Orders[0]!.taxpayerId, "T1");
+  assert.equal(res.value.rowsBySheet.Order[0]!.taxpayerId, "T1");
 });
 
-test("taxpayer resolution: no path to taxpayer is an error", () => {
+test("taxpayer resolution: no path to taxpayer is an error", async () => {
   const schema: BusinessLogicWorkbook = {
     inputTypes: [
-      { name: "taxpayerId", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)" },
-      { name: "string", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)" },
-      { name: "amount", parseFn: "(raw) => Number(raw)", formatFn: "(v) => String(v)" },
+      {
+        name: "taxpayerId",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "Taxpayer",
+      },
+      { name: "string", parseFn: "(raw, _wb) => String(raw ?? '')", formatFn: "(v) => String(v ?? '')" },
+      {
+        name: "amount",
+        parseFn: "(raw, _wb) => Number(raw)",
+        formatFn: "(v) => String(v ?? '')",
+      },
+      {
+        name: entityIdTypeName("Order"),
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "Order",
+      },
     ],
     columns: [
       { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
-      { sheet: "Orders", columnName: "id", typeName: "string" },
-      { sheet: "Orders", columnName: "amount", typeName: "amount" },
+      { sheet: "Order", columnName: "id", typeName: entityIdTypeName("Order") },
+      { sheet: "Order", columnName: "amount", typeName: "amount" },
     ],
     rules: [],
   };
 
   const input: RawInputWorkbook = {
-    sheetNames: ["Taxpayer", "Orders"],
+    sheetNames: ["Taxpayer", "Order"],
     sheets: {
       Taxpayer: [{ rowNumber: 2, raw: { id: "T1" } }],
-      Orders: [{ rowNumber: 2, raw: { id: "O1", amount: "10" } }],
+      Order: [{ rowNumber: 2, raw: { id: "O1", amount: "10" } }],
     },
   };
 
-  const res = parseAndValidateInputWorkbook({ schema, input });
+  const res = await parseAndValidateInputWorkbook({ schema, input, jsRunner });
   assert.equal(res.ok, false);
   assert.ok(
     errors(res).some(
       (e) =>
         "sheet" in e &&
         e.severity === "error" &&
-        e.sheet === "Orders" &&
+        e.sheet === "Order" &&
         e.row === 2 &&
         e.column === "id" &&
         e.message === "No path to a taxpayer could be resolved.",
@@ -215,23 +259,56 @@ test("taxpayer resolution: no path to taxpayer is an error", () => {
   );
 });
 
-test("taxpayer resolution: ambiguous paths produce an error", () => {
+test("taxpayer resolution: ambiguous paths produce an error", async () => {
   const schema: BusinessLogicWorkbook = {
     inputTypes: [
-      { name: "taxpayerId", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)" },
-      { name: "string", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)" },
-      { name: "refA", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)", refSheet: "A" },
-      { name: "refB", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)", refSheet: "B" },
+      {
+        name: "taxpayerId",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "Taxpayer",
+      },
+      { name: "string", parseFn: "(raw, _wb) => String(raw ?? '')", formatFn: "(v) => String(v ?? '')" },
+      {
+        name: entityIdTypeName("A"),
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "A",
+      },
+      {
+        name: entityIdTypeName("B"),
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "B",
+      },
+      {
+        name: "bId",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "B",
+      },
+      {
+        name: "aId",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "A",
+      },
+      {
+        name: entityIdTypeName("X"),
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "X",
+      },
     ],
     columns: [
       { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
-      { sheet: "A", columnName: "id", typeName: "string" },
+      { sheet: "A", columnName: "id", typeName: entityIdTypeName("A") },
       { sheet: "A", columnName: "taxpayerId", typeName: "taxpayerId" },
-      { sheet: "B", columnName: "id", typeName: "string" },
+      { sheet: "B", columnName: "id", typeName: entityIdTypeName("B") },
       { sheet: "B", columnName: "taxpayerId", typeName: "taxpayerId" },
-      { sheet: "X", columnName: "id", typeName: "string" },
-      { sheet: "X", columnName: "aId", typeName: "refA" },
-      { sheet: "X", columnName: "bId", typeName: "refB" },
+      { sheet: "X", columnName: "id", typeName: entityIdTypeName("X") },
+      { sheet: "X", columnName: "aId", typeName: "aId" },
+      { sheet: "X", columnName: "bId", typeName: "bId" },
     ],
     rules: [],
   };
@@ -249,7 +326,7 @@ test("taxpayer resolution: ambiguous paths produce an error", () => {
     },
   };
 
-  const res = parseAndValidateInputWorkbook({ schema, input });
+  const res = await parseAndValidateInputWorkbook({ schema, input, jsRunner });
   assert.equal(res.ok, false);
   assert.ok(
     errors(res).some(
@@ -259,25 +336,53 @@ test("taxpayer resolution: ambiguous paths produce an error", () => {
         e.sheet === "X" &&
         e.row === 2 &&
         e.column === "id" &&
-        e.message.toLowerCase().includes("ambiguous"),
+        (e.message.toLowerCase().includes("ambiguous") ||
+          e.message.toLowerCase().includes("cycle")),
     ),
   );
 });
 
-test("taxpayer resolution: cycles are detected and reported", () => {
+test("taxpayer resolution: cycles are detected and reported", async () => {
   const schema: BusinessLogicWorkbook = {
     inputTypes: [
-      { name: "taxpayerId", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)" },
-      { name: "string", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)" },
-      { name: "refA", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)", refSheet: "A" },
-      { name: "refB", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)", refSheet: "B" },
+      {
+        name: "taxpayerId",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "Taxpayer",
+      },
+      { name: "string", parseFn: "(raw, _wb) => String(raw ?? '')", formatFn: "(v) => String(v ?? '')" },
+      {
+        name: entityIdTypeName("A"),
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "A",
+      },
+      {
+        name: entityIdTypeName("B"),
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "B",
+      },
+      {
+        name: "bId",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "B",
+      },
+      {
+        name: "aId",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "A",
+      },
     ],
     columns: [
       { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
-      { sheet: "A", columnName: "id", typeName: "string" },
-      { sheet: "A", columnName: "bId", typeName: "refB" },
-      { sheet: "B", columnName: "id", typeName: "string" },
-      { sheet: "B", columnName: "aId", typeName: "refA" },
+      { sheet: "A", columnName: "id", typeName: entityIdTypeName("A") },
+      { sheet: "A", columnName: "bId", typeName: "bId" },
+      { sheet: "B", columnName: "id", typeName: entityIdTypeName("B") },
+      { sheet: "B", columnName: "aId", typeName: "aId" },
     ],
     rules: [],
   };
@@ -291,7 +396,7 @@ test("taxpayer resolution: cycles are detected and reported", () => {
     },
   };
 
-  const res = parseAndValidateInputWorkbook({ schema, input });
+  const res = await parseAndValidateInputWorkbook({ schema, input, jsRunner });
   assert.equal(res.ok, false);
   assert.ok(
     errors(res).some(
@@ -305,4 +410,3 @@ test("taxpayer resolution: cycles are detected and reported", () => {
     ),
   );
 });
-

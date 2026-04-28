@@ -47,7 +47,7 @@ test("timeout causes worker restart; next call works", async () => {
     return new MockWorker((msg) => {
       if (msg.kind !== "req") throw new Error("bad msg");
       if (msg.op === "runParse") {
-        const { input } = msg.payload as { input: string };
+        const { input } = msg.payload as { input: string; inputWorkbook?: unknown };
         return okRes(msg.requestId, { ok: true, value: input.trim() });
       }
       return okRes(msg.requestId, { ok: true });

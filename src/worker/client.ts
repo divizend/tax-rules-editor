@@ -121,8 +121,8 @@ export class JsRunnerClient {
     }
   }
 
-  runParse(source: string, input: string): Promise<RunParseResult> {
-    return this.request("runParse", { source, input });
+  runParse(source: string, input: string, inputWorkbook?: unknown): Promise<RunParseResult> {
+    return this.request("runParse", { source, input, inputWorkbook });
   }
 
   runFormat(source: string, input: unknown): Promise<RunFormatResult> {

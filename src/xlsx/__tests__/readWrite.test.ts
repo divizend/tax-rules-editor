@@ -13,22 +13,21 @@ function makeWorkbook(): BusinessLogicWorkbook {
       {
         name: "taxpayerId",
         description: "Globally unique taxpayer identifier",
-        parseFn: "(raw) => String(raw)",
-        formatFn: "(v) => String(v)",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
+        ref: "Taxpayer",
       },
       {
         name: "string",
-        parseFn: "(raw) => String(raw)",
-        formatFn: "(v) => String(v)",
-        refSheet: "Taxpayer",
-        refColumn: "id",
+        parseFn: "(raw, _wb) => String(raw ?? '')",
+        formatFn: "(v) => String(v ?? '')",
       },
     ],
     columns: [
-      { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
-      { sheet: "Taxpayer", columnName: "name", typeName: "string" },
+      { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId", description: "Primary key" },
+      { sheet: "Taxpayer", columnName: "name", typeName: "string", description: "Full name" },
     ],
-    rules: [{ name: "ruleA", ruleFn: "(draft) => { draft.x = 1 }" }],
+    rules: [{ name: "ruleA", description: "Sets x=1", ruleFn: "(draft) => { draft.x = 1 }" }],
   };
 }
 
@@ -39,7 +38,7 @@ test("write -> read roundtrip preserves values", () => {
   assert.deepEqual(read, wb);
 });
 
-test("missing sheets produce empty lists", () => {
+test("missing required sheets throw", () => {
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([["name"], ["x"]]), "SomeOtherSheet");
   const out = XLSX.write(book, { bookType: "xlsx", type: "array" });
@@ -57,7 +56,6 @@ test("missing sheets produce empty lists", () => {
         : (() => {
             throw new Error("Unexpected XLSX output type");
           })();
-  const wb = readBusinessLogicWorkbook(buf);
-  assert.deepEqual(wb, { inputTypes: [], columns: [], rules: [] });
-});
 
+  assert.throws(() => readBusinessLogicWorkbook(buf), /Missing required sheet/);
+});

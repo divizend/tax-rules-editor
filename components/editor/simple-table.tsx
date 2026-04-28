@@ -1,12 +1,16 @@
 "use client";
 
 import * as React from "react";
+import { Pencil, Trash2 } from "lucide-react";
+import { JsCodeWithAiExplain } from "./js-code-with-ai-explain";
 
 type Column<Row extends object> = {
   key: keyof Row;
   label: string;
-  kind?: "text" | "textarea";
+  kind?: "text" | "textarea" | "select";
+  options?: string[] | (() => string[]);
   placeholder?: string;
+  display?: "truncate" | "wrap";
 };
 
 export function SimpleTable<Row extends Record<string, unknown>>(props: {
@@ -18,11 +22,40 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
   onAddRow: (row: Row) => void;
   onDeleteRow: (idx: number) => void;
   headerRight?: React.ReactNode;
+  addLabel?: string;
+  canEditRow?: (row: Row, idx: number) => boolean;
+  canDeleteRow?: (row: Row, idx: number) => boolean;
+  validateDraft?: (args: { mode: "add" | "edit"; draft: Record<string, string>; editingIdx: number | null }) =>
+    | string
+    | null;
+  rowActions?: (row: Row, idx: number) => React.ReactNode;
 }): React.ReactNode {
-  const { caption, rows, columns, onChangeRow, createRow, onAddRow, onDeleteRow, headerRight } = props;
+  const {
+    caption,
+    rows,
+    columns,
+    onChangeRow,
+    createRow,
+    onAddRow,
+    onDeleteRow,
+    headerRight,
+    addLabel = "Add",
+    canEditRow,
+    canDeleteRow,
+    validateDraft,
+    rowActions,
+  } = props;
   const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
   const [isAdding, setIsAdding] = React.useState(false);
   const [draft, setDraft] = React.useState<Record<string, string> | null>(null);
+  const draftError =
+    draft && validateDraft
+      ? validateDraft({
+          mode: isAdding ? "add" : "edit",
+          draft,
+          editingIdx,
+        })
+      : null;
 
   function openEdit(idx: number) {
     const row = rows[idx];
@@ -57,6 +90,7 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
 
   function saveEdit() {
     if (!draft) return;
+    if (draftError) return;
 
     if (isAdding) {
       const next = {} as Record<string, unknown>;
@@ -86,7 +120,7 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
             onClick={openAdd}
             className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
           >
-            Add
+            {addLabel}
           </button>
         </div>
       </div>
@@ -116,34 +150,51 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
                   {columns.map((c) => {
                     const value = (row[c.key] ?? "") as unknown;
                     const str = typeof value === "string" ? value : String(value ?? "");
+                    const display = c.display ?? "truncate";
                     return (
                       <td key={String(c.key)} className="px-3 py-2">
                         {c.kind === "textarea" ? (
-                          <div className="max-w-[28rem] whitespace-pre-wrap font-mono text-xs text-muted-foreground">
-                            {str.length > 220 ? `${str.slice(0, 220)}…` : str || "—"}
-                          </div>
+                          <JsCodeWithAiExplain code={str} />
                         ) : (
-                          <div className="max-w-[18rem] truncate">{str || "—"}</div>
+                          <div
+                            className={
+                              display === "wrap"
+                                ? "max-w-[28rem] whitespace-pre-wrap break-words"
+                                : "max-w-[18rem] truncate"
+                            }
+                          >
+                            {str || "—"}
+                          </div>
                         )}
                       </td>
                     );
                   })}
                   <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(idx)}
-                      className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                    >
-                      Edit
-                    </button>
-                    <span className="inline-block w-2" />
-                    <button
-                      type="button"
-                      onClick={() => onDeleteRow(idx)}
-                      className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                    >
-                      Delete
-                    </button>
+                    <div className="inline-flex items-center gap-1">
+                      {rowActions ? rowActions(row, idx) : null}
+                      {(canEditRow ? canEditRow(row, idx) : true) ? (
+                        <button
+                          type="button"
+                          onClick={() => openEdit(idx)}
+                          className="rounded-md border p-1.5 text-xs hover:bg-muted"
+                          title="Edit"
+                          aria-label="Edit"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                      {(canDeleteRow ? canDeleteRow(row, idx) : true) ? (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteRow(idx)}
+                          className="rounded-md border p-1.5 text-xs hover:bg-muted"
+                          title="Delete"
+                          aria-label="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -184,6 +235,19 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
                       onChange={(e) => setDraft({ ...draft, [String(c.key)]: e.target.value })}
                       className="w-full resize-y rounded-md border bg-transparent px-3 py-2 font-mono text-xs outline-none placeholder:text-muted-foreground"
                     />
+                  ) : c.kind === "select" ? (
+                    <select
+                      value={draft[String(c.key)] ?? ""}
+                      onChange={(e) => setDraft({ ...draft, [String(c.key)]: e.target.value })}
+                      className="w-full rounded-md border bg-transparent px-3 py-2 outline-none"
+                    >
+                      <option value="">{c.placeholder ?? "Select…"}</option>
+                      {(typeof c.options === "function" ? c.options() : c.options ?? []).map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
                     <input
                       type="text"
@@ -195,6 +259,7 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
                   )}
                 </label>
               ))}
+              {draftError ? <div className="text-sm text-destructive">{draftError}</div> : null}
             </div>
             <div className="flex items-center justify-end gap-2 border-t p-4">
               <button
@@ -207,6 +272,7 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
               <button
                 type="button"
                 onClick={saveEdit}
+                disabled={!!draftError}
                 className="rounded-md border bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
               >
                 Save

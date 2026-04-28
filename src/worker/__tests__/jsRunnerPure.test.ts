@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { runParse, compileSourceToFunction } from "../jsRunner.worker";
 
 test("runParse executes and returns value", () => {
-  const res = runParse("(s) => s.trim()", "  hello  ");
+  const res = runParse("(s, _wb) => s.trim()", "  hello  ", {});
   assert.equal(res.ok, true);
   if (res.ok) assert.equal(res.value, "hello");
 });
