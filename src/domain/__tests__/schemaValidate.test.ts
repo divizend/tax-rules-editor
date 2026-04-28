@@ -10,20 +10,20 @@ function makeValidWorkbook(): BusinessLogicWorkbook {
     inputTypes: [
       {
         name: "taxpayerId",
-        parseFn: (raw) => raw,
-        formatFn: (v) => String(v),
+        parseFn: "(raw) => raw",
+        formatFn: "(v) => String(v)",
       },
       {
         name: "string",
-        parseFn: (raw) => raw,
-        formatFn: (v) => String(v),
+        parseFn: "(raw) => raw",
+        formatFn: "(v) => String(v)",
       },
     ],
     columns: [
       { sheet: "Taxpayers", columnName: "id", typeName: "taxpayerId" },
       { sheet: "Taxpayers", columnName: "name", typeName: "string" },
     ],
-    rules: [{ name: "ruleA", ruleFn: (ctx) => ctx }],
+    rules: [{ name: "ruleA", ruleFn: "(draft) => draft" }],
   };
 }
 
@@ -167,8 +167,8 @@ test("columns: blank/missing typeName vs unknown typeName are reported separatel
 
 test("rules have unique non-empty names", () => {
   const wb = makeValidWorkbook();
-  wb.rules.push({ name: "ruleA", ruleFn: (ctx) => ctx });
-  wb.rules.push({ name: "", ruleFn: (ctx) => ctx });
+  wb.rules.push({ name: "ruleA", ruleFn: "(draft) => draft" });
+  wb.rules.push({ name: "", ruleFn: "(draft) => draft" });
 
   const res = schemaValidate(wb);
   assert.equal(res.ok, false);
