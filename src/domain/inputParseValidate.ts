@@ -7,6 +7,7 @@ import type {
   ValidatedInputRow,
   ValidatedInputWorkbook,
 } from "./inputWorkbook.js";
+import type { JsRunnerClient } from "../worker/client.js";
 
 type AnyValidationError = ValidationResult<never>["errors"][number];
 
@@ -335,5 +336,17 @@ export function parseAndValidateInputWorkbook(params: {
   };
 
   return { ok: true, value, errors: [] };
+}
+
+/**
+ * Future integration point: apply an InputType parse function in the worker.
+ * Task 7 only requires the hook to exist; parsing still runs synchronously today.
+ */
+export function applyParseFnViaWorker(params: {
+  jsRunner: Pick<JsRunnerClient, "runParse">;
+  parseFnSource: string;
+  input: string;
+}) {
+  return params.jsRunner.runParse(params.parseFnSource, params.input);
 }
 
