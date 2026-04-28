@@ -1,7 +1,9 @@
-export type InputTypeDef<TParsed = unknown> = {
+export type InputTypeDef = {
   name: string;
-  parseFn: (raw: unknown) => TParsed;
-  formatFn: (value: TParsed) => string;
+  /** JS source that evaluates to a function `(raw: unknown) => unknown` */
+  parseFn: string;
+  /** JS source that evaluates to a function `(value: unknown) => string` */
+  formatFn: string;
   refSheet?: string;
   refColumn?: string;
 };
@@ -14,7 +16,8 @@ export type ColumnDef = {
 
 export type RuleDef = {
   name: string;
-  ruleFn: (ctx: unknown) => unknown;
+  /** JS source that evaluates to a function `(draft: unknown) => void` */
+  ruleFn: string;
 };
 
 export type BusinessLogicWorkbook = {
