@@ -1,4 +1,5 @@
 import { Geist, Geist_Mono } from "next/font/google"
+import type { Metadata, Viewport } from "next"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -11,6 +12,29 @@ const fontMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
 })
+
+export const metadata: Metadata = {
+  title: {
+    default: "XLSX Tax Rules Editor",
+    template: "%s | XLSX Tax Rules Editor",
+  },
+  description:
+    "Edit tax rules and workbook schemas in a spreadsheet-first UI. Generate templates, validate inputs, and simulate rules locally.",
+  applicationName: "XLSX Tax Rules Editor",
+  keywords: ["xlsx", "tax", "rules", "editor", "simulation", "spreadsheet"],
+  icons: {
+    icon: [{ url: "/favicon.ico" }],
+  },
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
+}
 
 export default function RootLayout({
   children,
