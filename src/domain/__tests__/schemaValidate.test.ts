@@ -26,9 +26,25 @@ function makeValidWorkbook(): BusinessLogicWorkbook {
   };
 }
 
-function messages(result: ReturnType<typeof schemaValidate>): string[] {
-  if (result.ok) return [];
-  return result.errors.map((e) => e.message);
+function errors(result: ReturnType<typeof schemaValidate>) {
+  assert.equal(result.ok, false);
+  return result.errors;
+}
+
+function assertHasError(
+  result: ReturnType<typeof schemaValidate>,
+  expected: { sheet: string; severity: "error" | "warning"; message?: string },
+) {
+  const es = errors(result);
+  assert.ok(
+    es.some(
+      (e) =>
+        e.sheet === expected.sheet &&
+        e.severity === expected.severity &&
+        (expected.message ? e.message === expected.message : true),
+    ),
+    `Expected error not found: ${JSON.stringify(expected)}\nActual: ${JSON.stringify(es, null, 2)}`,
+  );
 }
 
 test("accepts a valid workbook", () => {
@@ -44,9 +60,16 @@ test("inputTypes must have unique non-empty names", () => {
 
   const res = schemaValidate(wb);
   assert.equal(res.ok, false);
-  const m = messages(res);
-  assert.ok(m.some((x) => x.includes("non-empty names")));
-  assert.ok(m.some((x) => x.includes("unique names")));
+  assertHasError(res, { sheet: "InputTypes", severity: "error", message: 'Input types must have a non-empty "name".' });
+  // duplicates message includes the duplicated names, so keep this assertion tolerant
+  assert.ok(
+    errors(res).some(
+      (e) =>
+        e.sheet === "InputTypes" &&
+        e.severity === "error" &&
+        e.message.startsWith("Input type names must be unique. Duplicates:"),
+    ),
+  );
 });
 
 test("mandatory input type 'taxpayerId' exists", () => {
@@ -55,7 +78,7 @@ test("mandatory input type 'taxpayerId' exists", () => {
 
   const res = schemaValidate(wb);
   assert.equal(res.ok, false);
-  assert.ok(messages(res).some((x) => x.includes("mandatory input type 'taxpayerId'")));
+  assertHasError(res, { sheet: "InputTypes", severity: "error", message: 'Missing mandatory input type "taxpayerId".' });
 });
 
 test("columns include at least one Taxpayers row", () => {
@@ -64,7 +87,7 @@ test("columns include at least one Taxpayers row", () => {
 
   const res = schemaValidate(wb);
   assert.equal(res.ok, false);
-  assert.ok(messages(res).some((x) => x.includes("sheet==='Taxpayers'")));
+  assertHasError(res, { sheet: "Columns", severity: "error", message: 'Columns must include at least one row for sheet "Taxpayers".' });
 });
 
 test("Taxpayers sheet contains id column with typeName taxpayerId", () => {
@@ -73,7 +96,11 @@ test("Taxpayers sheet contains id column with typeName taxpayerId", () => {
 
   const res1 = schemaValidate(wb);
   assert.equal(res1.ok, false);
-  assert.ok(messages(res1).some((x) => x.includes("Taxpayers sheet must contain columnName==='id'")));
+  assertHasError(res1, {
+    sheet: "Columns",
+    severity: "error",
+    message: 'Sheet "Taxpayers" must define column "id" with input type "taxpayerId".',
+  });
 
   const wb2 = makeValidWorkbook();
   const idCol = wb2.columns.find((c) => c.sheet === "Taxpayers" && c.columnName === "id")!;
@@ -81,7 +108,11 @@ test("Taxpayers sheet contains id column with typeName taxpayerId", () => {
 
   const res2 = schemaValidate(wb2);
   assert.equal(res2.ok, false);
-  assert.ok(messages(res2).some((x) => x.includes("typeName==='taxpayerId'")));
+  assertHasError(res2, {
+    sheet: "Columns",
+    severity: "error",
+    message: 'Sheet "Taxpayers" must define column "id" with input type "taxpayerId".',
+  });
 });
 
 test("each ColumnDef.typeName references an existing input type", () => {
@@ -90,7 +121,14 @@ test("each ColumnDef.typeName references an existing input type", () => {
 
   const res = schemaValidate(wb);
   assert.equal(res.ok, false);
-  assert.ok(messages(res).some((x) => x.includes("must reference an existing input type")));
+  assert.ok(
+    errors(res).some(
+      (e) =>
+        e.sheet === "Columns" &&
+        e.severity === "error" &&
+        e.message.startsWith("Columns reference unknown input type(s): "),
+    ),
+  );
 });
 
 test("rules have unique non-empty names", () => {
@@ -100,8 +138,14 @@ test("rules have unique non-empty names", () => {
 
   const res = schemaValidate(wb);
   assert.equal(res.ok, false);
-  const m = messages(res);
-  assert.ok(m.some((x) => x.includes("rules must have non-empty names")));
-  assert.ok(m.some((x) => x.includes("rules must have unique names")));
+  assertHasError(res, { sheet: "Rules", severity: "error", message: 'Rules must have a non-empty "name".' });
+  assert.ok(
+    errors(res).some(
+      (e) =>
+        e.sheet === "Rules" &&
+        e.severity === "error" &&
+        e.message.startsWith("Rule names must be unique. Duplicates:"),
+    ),
+  );
 });
 

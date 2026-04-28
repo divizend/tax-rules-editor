@@ -3,7 +3,7 @@ import type { BusinessLogicWorkbook, ColumnDef, InputTypeDef, RuleDef } from "./
 
 type SchemaValidationError = ValidationResult<never>["errors"][number];
 
-function sheetError(sheet: string, message: string): SchemaValidationError {
+function sheetError(sheet: "InputTypes" | "Columns" | "Rules", message: string): SchemaValidationError {
   return { severity: "error", sheet, message };
 }
 
@@ -22,21 +22,21 @@ function collectDuplicateNames(items: Array<{ name: string }>): string[] {
   return [...dups];
 }
 
-export function schemaValidate(
-  workbook: BusinessLogicWorkbook,
-): ValidationResult<BusinessLogicWorkbook> {
-  const errors: Array<SchemaValidationError> = [];
+type ValidationContext = {
+  inputTypeNames: Set<string>;
+};
 
-  // inputTypes invariants
-  const inputTypeNames = new Set<string>();
+function validateInputTypes(workbook: BusinessLogicWorkbook, ctx: ValidationContext): SchemaValidationError[] {
+  const errors: SchemaValidationError[] = [];
+
   const invalidInputTypeNames: string[] = [];
   for (const it of workbook.inputTypes) {
     if (!isNonEmptyName(it.name)) invalidInputTypeNames.push(String(it.name));
-    else inputTypeNames.add(it.name.trim());
+    else ctx.inputTypeNames.add(it.name.trim());
   }
 
   if (invalidInputTypeNames.length > 0) {
-    errors.push(sheetError("InputTypes", "inputTypes must have non-empty names"));
+    errors.push(sheetError("InputTypes", 'Input types must have a non-empty "name".'));
   }
 
   const dupInputTypeNames = collectDuplicateNames(
@@ -46,39 +46,39 @@ export function schemaValidate(
     errors.push(
       sheetError(
         "InputTypes",
-        `inputTypes must have unique names (duplicates: ${dupInputTypeNames.join(", ")})`,
+        `Input type names must be unique. Duplicates: ${dupInputTypeNames.join(", ")}`,
       ),
     );
   }
 
-  if (!inputTypeNames.has("taxpayerId")) {
-    errors.push(sheetError("InputTypes", "mandatory input type 'taxpayerId' must exist"));
+  if (!ctx.inputTypeNames.has("taxpayerId")) {
+    errors.push(sheetError("InputTypes", 'Missing mandatory input type "taxpayerId".'));
   }
 
-  // columns invariants
+  return errors;
+}
+
+function validateColumns(workbook: BusinessLogicWorkbook, ctx: ValidationContext): SchemaValidationError[] {
+  const errors: SchemaValidationError[] = [];
+
   const taxpayersCols = workbook.columns.filter((c) => c.sheet === "Taxpayers");
   if (taxpayersCols.length === 0) {
-    errors.push(sheetError("Columns", "columns must include at least one row with sheet==='Taxpayers'"));
+    errors.push(sheetError("Columns", 'Columns must include at least one row for sheet "Taxpayers".'));
   } else {
     const idCol = taxpayersCols.find((c) => c.columnName === "id");
-    if (!idCol) {
-      errors.push(
-        sheetError("Taxpayers", "Taxpayers sheet must contain columnName==='id' with typeName==='taxpayerId'"),
-      );
-    } else if (idCol.typeName !== "taxpayerId") {
+    if (!idCol || idCol.typeName !== "taxpayerId") {
       errors.push(
         sheetError(
-          "Taxpayers",
-          "Taxpayers sheet must contain columnName==='id' with typeName==='taxpayerId'",
+          "Columns",
+          'Sheet "Taxpayers" must define column "id" with input type "taxpayerId".',
         ),
       );
     }
   }
 
-  // ColumnDef.typeName must reference an existing input type
   const missingTypeRefs = new Set<string>();
   for (const col of workbook.columns) {
-    if (!isNonEmptyName(col.typeName) || !inputTypeNames.has(col.typeName.trim())) {
+    if (!isNonEmptyName(col.typeName) || !ctx.inputTypeNames.has(col.typeName.trim())) {
       missingTypeRefs.add(String(col.typeName));
     }
   }
@@ -86,30 +86,45 @@ export function schemaValidate(
     errors.push(
       sheetError(
         "Columns",
-        `each ColumnDef.typeName must reference an existing input type (missing: ${[
-          ...missingTypeRefs,
-        ].join(", ")})`,
+        `Columns reference unknown input type(s): ${[...missingTypeRefs].join(", ")}`,
       ),
     );
   }
 
-  // rules invariants
+  return errors;
+}
+
+function validateRules(workbook: BusinessLogicWorkbook): SchemaValidationError[] {
+  const errors: SchemaValidationError[] = [];
+
   const invalidRuleNames: string[] = [];
   for (const r of workbook.rules) {
     if (!isNonEmptyName(r.name)) invalidRuleNames.push(String(r.name));
   }
   if (invalidRuleNames.length > 0) {
-    errors.push(sheetError("Rules", "rules must have non-empty names"));
+    errors.push(sheetError("Rules", 'Rules must have a non-empty "name".'));
   }
 
   const dupRuleNames = collectDuplicateNames(
     workbook.rules.filter((r): r is RuleDef & { name: string } => isNonEmptyName(r.name)),
   );
   if (dupRuleNames.length > 0) {
-    errors.push(
-      sheetError("Rules", `rules must have unique names (duplicates: ${dupRuleNames.join(", ")})`),
-    );
+    errors.push(sheetError("Rules", `Rule names must be unique. Duplicates: ${dupRuleNames.join(", ")}`));
   }
+
+  return errors;
+}
+
+export function schemaValidate(
+  workbook: BusinessLogicWorkbook,
+): ValidationResult<BusinessLogicWorkbook> {
+  const ctx: ValidationContext = { inputTypeNames: new Set<string>() };
+
+  const errors: Array<SchemaValidationError> = [
+    ...validateInputTypes(workbook, ctx),
+    ...validateColumns(workbook, ctx),
+    ...validateRules(workbook),
+  ];
 
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, value: workbook, errors: [] };
