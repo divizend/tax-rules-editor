@@ -14,12 +14,14 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
   rows: Row[];
   columns: Array<Column<Row>>;
   onChangeRow: (idx: number, next: Row) => void;
-  onAddRow: () => void;
+  createRow: () => Row;
+  onAddRow: (row: Row) => void;
   onDeleteRow: (idx: number) => void;
   headerRight?: React.ReactNode;
 }): React.ReactNode {
-  const { caption, rows, columns, onChangeRow, onAddRow, onDeleteRow, headerRight } = props;
+  const { caption, rows, columns, onChangeRow, createRow, onAddRow, onDeleteRow, headerRight } = props;
   const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
+  const [isAdding, setIsAdding] = React.useState(false);
   const [draft, setDraft] = React.useState<Record<string, string> | null>(null);
 
   function openEdit(idx: number) {
@@ -31,16 +33,40 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
       nextDraft[String(c.key)] = typeof value === "string" ? value : value == null ? "" : String(value);
     }
     setEditingIdx(idx);
+    setIsAdding(false);
+    setDraft(nextDraft);
+  }
+
+  function openAdd() {
+    const row = createRow();
+    const nextDraft: Record<string, string> = {};
+    for (const c of columns) {
+      const value = row[c.key];
+      nextDraft[String(c.key)] = typeof value === "string" ? value : value == null ? "" : String(value);
+    }
+    setEditingIdx(null);
+    setIsAdding(true);
     setDraft(nextDraft);
   }
 
   function closeEdit() {
     setEditingIdx(null);
+    setIsAdding(false);
     setDraft(null);
   }
 
   function saveEdit() {
-    if (editingIdx == null || !draft) return;
+    if (!draft) return;
+
+    if (isAdding) {
+      const next = {} as Record<string, unknown>;
+      for (const c of columns) next[String(c.key)] = draft[String(c.key)] ?? "";
+      onAddRow(next as Row);
+      closeEdit();
+      return;
+    }
+
+    if (editingIdx == null) return;
     const base = rows[editingIdx];
     if (!base) return;
     const next = { ...base } as Record<string, unknown>;
@@ -57,7 +83,7 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
           {headerRight}
           <button
             type="button"
-            onClick={onAddRow}
+            onClick={openAdd}
             className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
           >
             Add
@@ -126,7 +152,7 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
         </table>
       </div>
 
-      {editingIdx != null && draft ? (
+      {(editingIdx != null || isAdding) && draft ? (
         <div
           role="dialog"
           aria-modal="true"
@@ -137,7 +163,7 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
         >
           <div className="w-full max-w-2xl rounded-xl border bg-background shadow-lg">
             <div className="flex items-center justify-between gap-3 border-b p-4">
-              <div className="text-sm font-medium">Edit row</div>
+              <div className="text-sm font-medium">{isAdding ? "Add row" : "Edit row"}</div>
               <button
                 type="button"
                 onClick={closeEdit}

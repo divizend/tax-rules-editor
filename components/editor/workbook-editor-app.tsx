@@ -599,6 +599,13 @@ export function WorkbookEditorApp(): React.ReactNode {
                     Add AI-generated
                   </Button>
                 }
+                createRow={() => ({
+                  name: "",
+                  parseFn: "(raw) => raw",
+                  formatFn: "(value) => String(value ?? '')",
+                  refSheet: "",
+                  refColumn: "",
+                })}
                 columns={[
                   {
                     key: "name",
@@ -635,16 +642,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                     )
                   )
                 }
-                onAddRow={() =>
-                  setInputTypes([
-                    ...activeTab.wb.inputTypes,
-                    {
-                      name: "",
-                      parseFn: "(raw) => raw",
-                      formatFn: "(value) => String(value ?? '')",
-                    },
-                  ])
-                }
+                onAddRow={(row) => setInputTypes([...activeTab.wb.inputTypes, row])}
                 onDeleteRow={(idx) =>
                   setInputTypes(
                     activeTab.wb.inputTypes.filter((_, i) => i !== idx)
@@ -657,6 +655,7 @@ export function WorkbookEditorApp(): React.ReactNode {
               <SimpleTable<ColumnDef>
                 caption="Columns sheet"
                 rows={activeTab.wb.columns}
+                createRow={() => ({ sheet: "", columnName: "", typeName: "" })}
                 columns={[
                   {
                     key: "sheet",
@@ -679,12 +678,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                     activeTab.wb.columns.map((r, i) => (i === idx ? next : r))
                   )
                 }
-                onAddRow={() =>
-                  setColumns([
-                    ...activeTab.wb.columns,
-                    { sheet: "", columnName: "", typeName: "" },
-                  ])
-                }
+                onAddRow={(row) => setColumns([...activeTab.wb.columns, row])}
                 onDeleteRow={(idx) =>
                   setColumns(activeTab.wb.columns.filter((_, i) => i !== idx))
                 }
@@ -711,6 +705,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                     Add AI-generated
                   </Button>
                 }
+                createRow={() => ({ name: "", ruleFn: "(draft) => {}" })}
                 columns={[
                   {
                     key: "name",
@@ -729,12 +724,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                     activeTab.wb.rules.map((r, i) => (i === idx ? next : r))
                   )
                 }
-                onAddRow={() =>
-                  setRules([
-                    ...activeTab.wb.rules,
-                    { name: "", ruleFn: "(draft) => {}" },
-                  ])
-                }
+                onAddRow={(row) => setRules([...activeTab.wb.rules, row])}
                 onDeleteRow={(idx) =>
                   setRules(activeTab.wb.rules.filter((_, i) => i !== idx))
                 }
