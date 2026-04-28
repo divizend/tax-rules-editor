@@ -91,11 +91,14 @@ export function WorkbookEditorApp(): React.ReactNode {
   const [simErrors, setSimErrors] = React.useState<RuleError[]>([]);
   const [simResults, setSimResults] = React.useState<Record<string, Aggregate> | null>(null);
 
-  const jsRunner = React.useMemo(() => {
-    if (typeof Worker === "undefined") return null;
-    return new JsRunnerClient({ timeoutMs: 2_000 });
+  const [jsRunner, setJsRunner] = React.useState<JsRunnerClient | null>(null);
+  React.useEffect(() => {
+    if (typeof Worker === "undefined") return;
+    const runner = new JsRunnerClient({ timeoutMs: 2_000 });
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setJsRunner(runner);
+    return () => runner.terminate();
   }, []);
-  React.useEffect(() => () => jsRunner?.terminate(), [jsRunner]);
 
   const schemaErrors = asValidationErrors(schemaValidation);
   const inputErrors = asValidationErrors(inputValidation);
