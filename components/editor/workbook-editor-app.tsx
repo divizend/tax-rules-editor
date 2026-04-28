@@ -47,6 +47,7 @@ type AnyErr = ValidationResult<never>["errors"][number]
 type WorkbookTab = {
   id: string
   title: string
+  dirty: boolean
   wb: BusinessLogicWorkbook
   rawInput: RawInputWorkbook | null
   schemaValidation: ValidationResult<BusinessLogicWorkbook> | null
@@ -205,7 +206,10 @@ export function WorkbookEditorApp(): React.ReactNode {
         return
       }
       if (!Array.isArray(st.tabs)) return
-      const restoredTabs = st.tabs.filter(Boolean) as WorkbookTab[]
+      const restoredTabs = (st.tabs.filter(Boolean) as WorkbookTab[]).map((t) => ({
+        ...t,
+        dirty: !!(t as Partial<WorkbookTab>).dirty,
+      }))
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setTabs(restoredTabs)
       const nextActive =
@@ -291,6 +295,15 @@ export function WorkbookEditorApp(): React.ReactNode {
     error: string | null
   }>(null)
 
+  const [renameWorkbookDialog, setRenameWorkbookDialog] = React.useState<null | {
+    title: string
+    error: string | null
+  }>(null)
+
+  const [confirmCloseDialog, setConfirmCloseDialog] = React.useState<null | {
+    tabId: string
+  }>(null)
+
   function nextUntitledTitle(prefix: string): string {
     const used = new Set(tabs.map((t) => t.title))
     if (!used.has(prefix)) return prefix
@@ -301,11 +314,16 @@ export function WorkbookEditorApp(): React.ReactNode {
     return `${prefix} ${Date.now()}`
   }
 
-  function openTab(params: { title: string; wb: BusinessLogicWorkbook }) {
+  function openTab(params: {
+    title: string
+    wb: BusinessLogicWorkbook
+    dirty?: boolean
+  }) {
     const id = crypto.randomUUID()
     const tab: WorkbookTab = {
       id,
       title: params.title,
+      dirty: params.dirty ?? false,
       wb: params.wb,
       rawInput: null,
       schemaValidation: null,
@@ -328,6 +346,42 @@ export function WorkbookEditorApp(): React.ReactNode {
     })
   }
 
+  function markDirty(tabId: string) {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === tabId ? (t.dirty ? t : { ...t, dirty: true }) : t)),
+    )
+  }
+
+  function clearDirty(tabId: string) {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === tabId ? (t.dirty ? { ...t, dirty: false } : t) : t)),
+    )
+  }
+
+  function requestCloseTab(id: string) {
+    const tab = tabs.find((t) => t.id === id) ?? null
+    if (tab?.dirty) {
+      setConfirmCloseDialog({ tabId: id })
+      return
+    }
+    closeTab(id)
+  }
+
+  function applyRenameWorkbook() {
+    if (!activeTab || !renameWorkbookDialog) return
+    const nextTitle = renameWorkbookDialog.title.trim()
+    if (nextTitle.length === 0) {
+      setRenameWorkbookDialog((prev) => (prev ? { ...prev, error: "Title is required" } : prev))
+      return
+    }
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === activeTab.id ? { ...t, dirty: true, title: nextTitle } : t,
+      ),
+    )
+    setRenameWorkbookDialog(null)
+  }
+
   async function onImportBusinessLogic(file: File) {
     setImportBusinessLogicError(null)
     try {
@@ -335,7 +389,7 @@ export function WorkbookEditorApp(): React.ReactNode {
       const next = readBusinessLogicWorkbook(buf)
       const title =
         file.name.replace(/\.xlsx$/i, "") || nextUntitledTitle("Workbook")
-      openTab({ title, wb: next })
+      openTab({ title, wb: next, dirty: false })
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to import business-logic XLSX."
       setImportBusinessLogicError(msg)
@@ -351,6 +405,7 @@ export function WorkbookEditorApp(): React.ReactNode {
         t.id === activeTab.id
           ? {
               ...t,
+              dirty: true,
               rawInput: input,
               inputValidation: null,
               simErrors: [],
@@ -448,7 +503,10 @@ export function WorkbookEditorApp(): React.ReactNode {
       setAiDialog((prev) => (prev ? { ...prev, loading: false, error: "AI returned an invalid row." } : prev))
       return
     }
-    setRules([...activeTab.wb.rules, { name: row.name, ruleFn: row.ruleFn }])
+    setRules([
+      ...activeTab.wb.rules,
+      { name: row.name, description, ruleFn: row.ruleFn },
+    ])
     setAiDialog(null)
   }
 
@@ -772,7 +830,9 @@ export function WorkbookEditorApp(): React.ReactNode {
     if (!activeTab) return
     setTabs((prev) =>
       prev.map((t) =>
-        t.id === activeTab.id ? { ...t, wb: { ...t.wb, inputTypes: next } } : t
+        t.id === activeTab.id
+          ? { ...t, dirty: true, wb: { ...t.wb, inputTypes: next } }
+          : t
       )
     )
   }
@@ -780,7 +840,9 @@ export function WorkbookEditorApp(): React.ReactNode {
     if (!activeTab) return
     setTabs((prev) =>
       prev.map((t) =>
-        t.id === activeTab.id ? { ...t, wb: { ...t.wb, columns: next } } : t
+        t.id === activeTab.id
+          ? { ...t, dirty: true, wb: { ...t.wb, columns: next } }
+          : t
       )
     )
   }
@@ -788,7 +850,9 @@ export function WorkbookEditorApp(): React.ReactNode {
     if (!activeTab) return
     setTabs((prev) =>
       prev.map((t) =>
-        t.id === activeTab.id ? { ...t, wb: { ...t.wb, rules: next } } : t
+        t.id === activeTab.id
+          ? { ...t, dirty: true, wb: { ...t.wb, rules: next } }
+          : t
       )
     )
   }
@@ -798,10 +862,6 @@ export function WorkbookEditorApp(): React.ReactNode {
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-6">
         <div className="flex flex-col gap-2">
           <h1 className="text-lg font-semibold">XLSX Tax Rules Editor</h1>
-          <div className="text-sm text-muted-foreground">
-            Client-side v3. Create/import business-logic, generate templates,
-            upload filled templates, run simulation in a worker.
-          </div>
         </div>
 
         {importBusinessLogicError ? (
@@ -836,7 +896,10 @@ export function WorkbookEditorApp(): React.ReactNode {
                       active ? "bg-muted" : "hover:bg-muted/50",
                     ].join(" ")}
                   >
-                    <span className="max-w-[10rem] truncate">{t.title}</span>
+                    <span className="max-w-[10rem] truncate">
+                      {t.title}
+                      {t.dirty ? "*" : ""}
+                    </span>
                     <span
                       className="inline-flex h-5 w-5 items-center justify-center rounded-md border text-xs hover:bg-background"
                       role="button"
@@ -844,13 +907,13 @@ export function WorkbookEditorApp(): React.ReactNode {
                       onClick={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
-                        closeTab(t.id)
+                        requestCloseTab(t.id)
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault()
                           e.stopPropagation()
-                          closeTab(t.id)
+                          requestCloseTab(t.id)
                         }
                       }}
                       aria-label={`Close ${t.title}`}
@@ -870,6 +933,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                   openTab({
                     title: nextUntitledTitle("Untitled"),
                     wb: createNewBusinessLogicWorkbook(),
+                    dirty: true,
                   })
                 }
               >
@@ -906,10 +970,22 @@ export function WorkbookEditorApp(): React.ReactNode {
               title="Workbook"
               right={
                 <>
-              <Button
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      setRenameWorkbookDialog({
+                        title: activeTab.title,
+                        error: null,
+                      })
+                    }
+                  >
+                    Rename
+                  </Button>
+
+                  <Button
                     variant="secondary"
                 onClick={() => {
-                      closeTab(activeTab.id)
+                      requestCloseTab(activeTab.id)
                     }}
                   >
                     Close
@@ -922,6 +998,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                         data,
                         filename: `${activeTab.title || "business-logic"}.xlsx`,
                       })
+                      clearDirty(activeTab.id)
                 }}
               >
                 Export XLSX
@@ -978,12 +1055,14 @@ export function WorkbookEditorApp(): React.ReactNode {
                     label: "parseFn",
                     kind: "textarea",
                     placeholder: "(raw, inputWorkbook) => ...",
+                    aiEdit: { kind: "parseFn", context: buildAiContext(activeTab.wb) },
                   },
                   {
                     key: "formatFn",
                     label: "formatFn",
                     kind: "textarea",
                     placeholder: "(value) => String(value)",
+                    aiEdit: { kind: "formatFn", context: buildAiContext(activeTab.wb) },
                   },
                 ]}
                 validateDraft={({ mode, draft, editingIdx }) => {
@@ -1005,13 +1084,17 @@ export function WorkbookEditorApp(): React.ReactNode {
                   return null
                 }}
                 canDeleteRow={(row) => {
-                  if (trim(row.name) === "taxpayerId") return false
+                  const n = trim(row.name)
+                  if (n === "taxpayerId") return false
+                  if (n === "string" || n === "number" || n === "boolean") return false
                   if (row.ref != null && trim(row.ref).length > 0) return false
                   return true
                 }}
                 canEditRow={(row) => {
                   // Entity-bound id types + taxpayerId are protected (must stay consistent with Column.sheet entities).
-                  if (trim(row.name) === "taxpayerId") return false
+                  const n = trim(row.name)
+                  if (n === "taxpayerId") return false
+                  if (n === "string" || n === "number" || n === "boolean") return false
                   if (row.ref != null && trim(row.ref).length > 0) return false
                   return true
                 }}
@@ -1064,7 +1147,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                   const rows = activeTab.wb.columns.filter((c) => trim(c.sheet) === entity)
                   return (
                     <div key={entity} className="rounded-lg border p-3">
-                      <SimpleTable<ColumnDef>
+          <SimpleTable<ColumnDef>
                         caption={entity}
                         headerRight={
                           trim(entity) === "Taxpayer" ? null : (
@@ -1204,6 +1287,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                     label: "ruleFn",
                     kind: "textarea",
                     placeholder: "(draft) => { ... }",
+                    aiEdit: { kind: "ruleFn", context: buildAiContext(activeTab.wb) },
                   },
                 ]}
                 validateDraft={({ mode, draft, editingIdx }) => {
@@ -1363,8 +1447,9 @@ export function WorkbookEditorApp(): React.ReactNode {
         )}
 
         <div className="text-xs text-muted-foreground">
-          Tip: press <kbd className="rounded border px-1">d</kbd> to toggle dark
-          mode.
+          Tip: press <kbd className="rounded border px-1">d</kbd> to toggle
+          light/dark and <kbd className="rounded border px-1">t</kbd> to cycle
+          themes.
         </div>
       </div>
 
@@ -1573,6 +1658,120 @@ export function WorkbookEditorApp(): React.ReactNode {
                 disabled={renameTableDialog.noun.trim().length === 0}
               >
                 Rename
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {renameWorkbookDialog ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setRenameWorkbookDialog(null)
+          }}
+        >
+          <div className="w-full max-w-lg rounded-xl border bg-background shadow-lg">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-sm font-medium">Rename workbook</div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setRenameWorkbookDialog(null)}
+              >
+                Close
+              </Button>
+            </div>
+            <div className="flex flex-col gap-3 p-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Title
+                </span>
+                <input
+                  value={renameWorkbookDialog.title}
+                  onChange={(e) =>
+                    setRenameWorkbookDialog((prev) =>
+                      prev ? { ...prev, title: e.target.value, error: null } : prev,
+                    )
+                  }
+                  className="w-full rounded-md border bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
+                  placeholder="e.g. 2026 filing"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      applyRenameWorkbook()
+                    }
+                  }}
+                />
+              </label>
+              {renameWorkbookDialog.error ? (
+                <div className="text-sm text-destructive">
+                  {renameWorkbookDialog.error}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t p-4">
+              <Button
+                variant="secondary"
+                onClick={() => setRenameWorkbookDialog(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => applyRenameWorkbook()}
+                disabled={renameWorkbookDialog.title.trim().length === 0}
+              >
+                Rename
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmCloseDialog ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setConfirmCloseDialog(null)
+          }}
+        >
+          <div className="w-full max-w-lg rounded-xl border bg-background shadow-lg">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-sm font-medium">Close workbook?</div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setConfirmCloseDialog(null)}
+              >
+                Close
+              </Button>
+            </div>
+            <div className="flex flex-col gap-2 p-4 text-sm">
+              <div>This workbook has unsaved changes.</div>
+              <div className="text-muted-foreground">
+                If you close it now, you will lose those changes.
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t p-4">
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmCloseDialog(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  const id = confirmCloseDialog.tabId
+                  setConfirmCloseDialog(null)
+                  closeTab(id)
+                }}
+              >
+                Close anyway
               </Button>
             </div>
           </div>

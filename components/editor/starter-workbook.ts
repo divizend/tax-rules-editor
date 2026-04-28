@@ -6,7 +6,6 @@ export function createNewBusinessLogicWorkbook(): BusinessLogicWorkbook {
 
   return {
     inputTypes: [
-      taxpayerId,
       {
         name: "string",
         description: "Free-form text",
@@ -20,6 +19,14 @@ export function createNewBusinessLogicWorkbook(): BusinessLogicWorkbook {
           "(raw, _wb) => {\n  const s = String(raw ?? '').trim();\n  if (s.length === 0) return 0;\n  const n = Number(s);\n  if (!Number.isFinite(n)) throw new Error('Not a number');\n  return n;\n}",
         formatFn: "(value) => String(value ?? '')",
       },
+      {
+        name: "boolean",
+        description: "A true/false value parsed from a string (blank => false).",
+        parseFn:
+          "(raw, _wb) => {\n  const s = String(raw ?? '').trim().toLowerCase();\n  if (s.length === 0) return false;\n  if (s === 'true' || s === 't' || s === 'yes' || s === 'y' || s === '1') return true;\n  if (s === 'false' || s === 'f' || s === 'no' || s === 'n' || s === '0') return false;\n  throw new Error('Not a boolean');\n}",
+        formatFn: "(value) => (value ? 'true' : 'false')",
+      },
+      taxpayerId,
     ],
     columns: [
       { sheet: "Taxpayer", columnName: "id", typeName: "taxpayerId" },
