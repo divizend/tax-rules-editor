@@ -149,6 +149,13 @@ export function WorkbookEditorApp(): React.ReactNode {
   const schemaErrors = asValidationErrors(activeTab?.schemaValidation ?? null)
   const inputErrors = asValidationErrors(activeTab?.inputValidation ?? null)
 
+  const [aiDialog, setAiDialog] = React.useState<null | {
+    kind: "inputType" | "rule"
+    text: string
+    loading: boolean
+    error: string | null
+  }>(null)
+
   function nextUntitledTitle(prefix: string): string {
     const used = new Set(tabs.map((t) => t.title))
     if (!used.has(prefix)) return prefix
@@ -211,6 +218,76 @@ export function WorkbookEditorApp(): React.ReactNode {
           : t
       )
     )
+  }
+
+  async function generateInputTypeFromAi(description: string) {
+    if (!activeTab) return
+    setAiDialog({ kind: "inputType", text: description, loading: true, error: null })
+    const res = await fetch("/api/ai/input-type", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ description }),
+    })
+    const json: unknown = await res.json().catch(() => null)
+    if (!res.ok) {
+      const msg =
+        typeof (json as { error?: unknown } | null)?.error === "string"
+          ? (json as { error: string }).error
+          : "AI request failed."
+      setAiDialog((prev) =>
+        prev ? { ...prev, loading: false, error: msg } : prev
+      )
+      return
+    }
+    const row = (json as { row?: unknown } | null)?.row as Partial<InputTypeDef> | undefined
+    if (
+      !row ||
+      typeof row.name !== "string" ||
+      typeof row.parseFn !== "string" ||
+      typeof row.formatFn !== "string"
+    ) {
+      setAiDialog((prev) => (prev ? { ...prev, loading: false, error: "AI returned an invalid row." } : prev))
+      return
+    }
+    setInputTypes([
+      ...activeTab.wb.inputTypes,
+      {
+        name: row.name,
+        parseFn: row.parseFn,
+        formatFn: row.formatFn,
+        refSheet: typeof row.refSheet === "string" ? row.refSheet : "",
+        refColumn: typeof row.refColumn === "string" ? row.refColumn : "",
+      },
+    ])
+    setAiDialog(null)
+  }
+
+  async function generateRuleFromAi(description: string) {
+    if (!activeTab) return
+    setAiDialog({ kind: "rule", text: description, loading: true, error: null })
+    const res = await fetch("/api/ai/rule", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ description }),
+    })
+    const json: unknown = await res.json().catch(() => null)
+    if (!res.ok) {
+      const msg =
+        typeof (json as { error?: unknown } | null)?.error === "string"
+          ? (json as { error: string }).error
+          : "AI request failed."
+      setAiDialog((prev) =>
+        prev ? { ...prev, loading: false, error: msg } : prev
+      )
+      return
+    }
+    const row = (json as { row?: unknown } | null)?.row as Partial<RuleDef> | undefined
+    if (!row || typeof row.name !== "string" || typeof row.ruleFn !== "string") {
+      setAiDialog((prev) => (prev ? { ...prev, loading: false, error: "AI returned an invalid row." } : prev))
+      return
+    }
+    setRules([...activeTab.wb.rules, { name: row.name, ruleFn: row.ruleFn }])
+    setAiDialog(null)
   }
 
   async function onValidateAndSimulate() {
@@ -437,6 +514,22 @@ export function WorkbookEditorApp(): React.ReactNode {
               <SimpleTable<InputTypeDef>
                 caption="InputTypes sheet"
                 rows={activeTab.wb.inputTypes}
+                headerRight={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      setAiDialog({
+                        kind: "inputType",
+                        text: "",
+                        loading: false,
+                        error: null,
+                      })
+                    }
+                  >
+                    Add AI-generated
+                  </Button>
+                }
                 columns={[
                   {
                     key: "name",
@@ -533,6 +626,22 @@ export function WorkbookEditorApp(): React.ReactNode {
               <SimpleTable<RuleDef>
                 caption="Rules sheet"
                 rows={activeTab.wb.rules}
+                headerRight={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      setAiDialog({
+                        kind: "rule",
+                        text: "",
+                        loading: false,
+                        error: null,
+                      })
+                    }
+                  >
+                    Add AI-generated
+                  </Button>
+                }
                 columns={[
                   {
                     key: "name",
@@ -664,6 +773,79 @@ export function WorkbookEditorApp(): React.ReactNode {
           mode.
         </div>
       </div>
+
+      {aiDialog ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setAiDialog(null)
+          }}
+        >
+          <div className="w-full max-w-2xl rounded-xl border bg-background shadow-lg">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-sm font-medium">
+                {aiDialog.kind === "inputType"
+                  ? "AI-generate Input Type"
+                  : "AI-generate Rule"}
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setAiDialog(null)}
+              >
+                Close
+              </Button>
+            </div>
+            <div className="flex flex-col gap-3 p-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Describe what you want
+                </span>
+                <textarea
+                  rows={6}
+                  value={aiDialog.text}
+                  onChange={(e) =>
+                    setAiDialog((prev) =>
+                      prev ? { ...prev, text: e.target.value } : prev
+                    )
+                  }
+                  className="w-full resize-y rounded-md border bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
+                  placeholder={
+                    aiDialog.kind === "inputType"
+                      ? "Example: A type 'currency' that parses '12.34' and formats with two decimals."
+                      : "Example: Sum all Orders.amount into draft.ComputedTotals[0].total."
+                  }
+                />
+              </label>
+              {aiDialog.error ? (
+                <div className="text-sm text-destructive">{aiDialog.error}</div>
+              ) : null}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t p-4">
+              <Button
+                variant="secondary"
+                onClick={() => setAiDialog(null)}
+                disabled={aiDialog.loading}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  const desc = aiDialog.text.trim()
+                  if (aiDialog.kind === "inputType")
+                    void generateInputTypeFromAi(desc)
+                  else void generateRuleFromAi(desc)
+                }}
+                disabled={aiDialog.loading || aiDialog.text.trim().length === 0}
+              >
+                {aiDialog.loading ? "Generating…" : "Generate"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

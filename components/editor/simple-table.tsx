@@ -16,8 +16,9 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
   onChangeRow: (idx: number, next: Row) => void;
   onAddRow: () => void;
   onDeleteRow: (idx: number) => void;
+  headerRight?: React.ReactNode;
 }): React.ReactNode {
-  const { caption, rows, columns, onChangeRow, onAddRow, onDeleteRow } = props;
+  const { caption, rows, columns, onChangeRow, onAddRow, onDeleteRow, headerRight } = props;
   const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
   const [draft, setDraft] = React.useState<Record<string, string> | null>(null);
 
@@ -52,13 +53,16 @@ export function SimpleTable<Row extends Record<string, unknown>>(props: {
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-medium">{caption}</div>
-        <button
-          type="button"
-          onClick={onAddRow}
-          className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-        >
-          Add
-        </button>
+        <div className="flex items-center gap-2">
+          {headerRight}
+          <button
+            type="button"
+            onClick={onAddRow}
+            className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+          >
+            Add
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border">
