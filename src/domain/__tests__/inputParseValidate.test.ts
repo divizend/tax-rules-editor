@@ -177,6 +177,44 @@ test("taxpayer resolution: indirect via fk chain", () => {
   assert.equal(res.value.rowsBySheet.Orders[0]!.taxpayerId, "T1");
 });
 
+test("taxpayer resolution: no path to taxpayer is an error", () => {
+  const schema: BusinessLogicWorkbook = {
+    inputTypes: [
+      { name: "taxpayerId", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)" },
+      { name: "string", parseFn: "(raw) => String(raw)", formatFn: "(v) => String(v)" },
+      { name: "amount", parseFn: "(raw) => Number(raw)", formatFn: "(v) => String(v)" },
+    ],
+    columns: [
+      { sheet: "Taxpayers", columnName: "id", typeName: "taxpayerId" },
+      { sheet: "Orders", columnName: "id", typeName: "string" },
+      { sheet: "Orders", columnName: "amount", typeName: "amount" },
+    ],
+    rules: [],
+  };
+
+  const input: RawInputWorkbook = {
+    sheetNames: ["Taxpayers", "Orders"],
+    sheets: {
+      Taxpayers: [{ rowNumber: 2, raw: { id: "T1" } }],
+      Orders: [{ rowNumber: 2, raw: { id: "O1", amount: "10" } }],
+    },
+  };
+
+  const res = parseAndValidateInputWorkbook({ schema, input });
+  assert.equal(res.ok, false);
+  assert.ok(
+    errors(res).some(
+      (e) =>
+        "sheet" in e &&
+        e.severity === "error" &&
+        e.sheet === "Orders" &&
+        e.row === 2 &&
+        e.column === "id" &&
+        e.message === "No path to a taxpayer could be resolved.",
+    ),
+  );
+});
+
 test("taxpayer resolution: ambiguous paths produce an error", () => {
   const schema: BusinessLogicWorkbook = {
     inputTypes: [
