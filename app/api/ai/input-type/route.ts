@@ -7,9 +7,6 @@ const InputTypeRowSchema = z.object({
   name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   parseFn: z.string().min(1),
   formatFn: z.string().min(1),
-  // Keep these required for OpenAI JSON schema strictness; empty string means "not a foreign key".
-  refSheet: z.string(),
-  refColumn: z.string(),
 });
 
 export async function POST(req: Request) {
@@ -27,14 +24,15 @@ export async function POST(req: Request) {
       schema: InputTypeRowSchema,
       system:
         "Generate exactly one InputTypes row for an XLSX business-logic workbook. " +
-        "Return an object with name, parseFn, formatFn, optional refSheet/refColumn. " +
+        "Return an object with name, parseFn, formatFn. " +
+        "Do not include foreign key information (refSheet/refColumn); those will be added separately by the user. " +
         "parseFn and formatFn must be JavaScript function expressions (arrow or function expression). " +
         "Keep deterministic; no time/random/network/DOM. parseFn should trim where appropriate.",
       prompt: description,
       temperature: 0.2,
     });
 
-    const row = result.object;
+    const row = { ...result.object, refSheet: "", refColumn: "" };
     return NextResponse.json({ row });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "AI generation failed.";
