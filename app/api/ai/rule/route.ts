@@ -1,79 +1,40 @@
 import { NextResponse } from "next/server";
+import { generateObject } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
 
-import { SYSTEM_PROMPT_RULE } from "@/src/ai/prompts";
-
-type RuleRow = {
-  name: string;
-  ruleFn: string;
-};
-
-function isNonEmptyString(v: unknown): v is string {
-  return typeof v === "string" && v.trim().length > 0;
-}
-
-function looksLikeFunctionSource(src: string): boolean {
-  const s = src.trim();
-  return s.startsWith("(") || s.startsWith("function") || s.includes("=>");
-}
-
-function validateRow(row: unknown): { ok: true; value: RuleRow } | { ok: false; error: string } {
-  if (!row || typeof row !== "object") return { ok: false, error: "Model did not return an object." };
-  const r = row as Record<string, unknown>;
-  if (!isNonEmptyString(r.name)) return { ok: false, error: "Missing or invalid 'name'." };
-  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(r.name.trim())) return { ok: false, error: "Invalid 'name' format." };
-  if (!isNonEmptyString(r.ruleFn) || !looksLikeFunctionSource(r.ruleFn)) return { ok: false, error: "Invalid 'ruleFn'." };
-  return { ok: true, value: { name: r.name.trim(), ruleFn: String(r.ruleFn) } };
-}
+const RuleRowSchema = z.object({
+  name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+  ruleFn: z.string().min(1),
+});
 
 export async function POST(req: Request) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "OPENAI_API_KEY not set" }, { status: 500 });
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ error: "OPENAI_API_KEY not set" }, { status: 500 });
+  }
 
   const body = (await req.json().catch(() => null)) as { description?: string } | null;
   const description = body?.description?.trim();
   if (!description) return NextResponse.json({ error: "Missing 'description'." }, { status: 400 });
 
-  const r = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4.1-mini",
-      input: [
-        { role: "system", content: SYSTEM_PROMPT_RULE },
-        { role: "user", content: description },
-      ],
-      temperature: 0.2,
-      max_output_tokens: 800,
-    }),
-  });
-
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    return NextResponse.json({ error: `OpenAI error (${r.status})`, detail: text }, { status: 502 });
-  }
-
-  const json: unknown = await r.json();
-  const text: string | undefined =
-    typeof (json as { output_text?: unknown } | null)?.output_text === "string"
-      ? ((json as { output_text: string }).output_text as string)
-      : undefined;
-  if (!text || typeof text !== "string") {
-    return NextResponse.json({ error: "OpenAI response missing output_text" }, { status: 502 });
-  }
-
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
-  } catch {
-    return NextResponse.json({ error: "Model did not return valid JSON.", raw: text }, { status: 502 });
+    const result = await generateObject({
+      model: openai("gpt-4.1-mini"),
+      schema: RuleRowSchema,
+      system:
+        "Generate exactly one Rules row for an XLSX business-logic workbook. " +
+        "Return an object with name and ruleFn. " +
+        "ruleFn must be a JavaScript function expression (arrow or function expression) with signature (draft)=>void; mutate draft in-place. " +
+        "Keep deterministic; no time/random/network/DOM.",
+      prompt: description,
+      temperature: 0.2,
+    });
+
+    const row = result.object;
+    return NextResponse.json({ row });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "AI generation failed.";
+    return NextResponse.json({ error: msg }, { status: 502 });
   }
-
-  const validated = validateRow(parsed);
-  if (!validated.ok) return NextResponse.json({ error: validated.error, raw: parsed }, { status: 502 });
-
-  return NextResponse.json({ row: validated.value });
 }
 
