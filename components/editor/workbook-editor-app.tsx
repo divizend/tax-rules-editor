@@ -83,7 +83,7 @@ function Section(props: { title: string; children: React.ReactNode; right?: Reac
 }
 
 export function WorkbookEditorApp(): React.ReactNode {
-  const [wb, setWb] = React.useState<BusinessLogicWorkbook>(() => createStarterBusinessLogicWorkbook());
+  const [wb, setWb] = React.useState<BusinessLogicWorkbook | null>(null);
   const [rawInput, setRawInput] = React.useState<RawInputWorkbook | null>(null);
 
   const [schemaValidation, setSchemaValidation] = React.useState<ValidationResult<BusinessLogicWorkbook> | null>(null);
@@ -128,7 +128,7 @@ export function WorkbookEditorApp(): React.ReactNode {
     setSimErrors([]);
     setSimResults(null);
 
-    if (!jsRunner) return;
+    if (!jsRunner || !wb) return;
 
     const schemaRes = await validateSchemaWithWorkerCompile({ wb, jsRunner });
     setSchemaValidation(schemaRes);
@@ -155,13 +155,13 @@ export function WorkbookEditorApp(): React.ReactNode {
   }
 
   function setInputTypes(next: InputTypeDef[]) {
-    setWb((prev) => ({ ...prev, inputTypes: next }));
+    setWb((prev) => (prev ? { ...prev, inputTypes: next } : prev));
   }
   function setColumns(next: ColumnDef[]) {
-    setWb((prev) => ({ ...prev, columns: next }));
+    setWb((prev) => (prev ? { ...prev, columns: next } : prev));
   }
   function setRules(next: RuleDef[]) {
-    setWb((prev) => ({ ...prev, rules: next }));
+    setWb((prev) => (prev ? { ...prev, rules: next } : prev));
   }
 
   return (
@@ -175,168 +175,190 @@ export function WorkbookEditorApp(): React.ReactNode {
           </div>
         </div>
 
-        <Section
-          title="Workbook"
-          right={
-            <>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setWb(createBlankBusinessLogicWorkbook());
-                  setRawInput(null);
-                  setSchemaValidation(null);
-                  setInputValidation(null);
-                  setSimErrors([]);
-                  setSimResults(null);
-                }}
-              >
-                Blank
-              </Button>
+        {wb ? (
+          <>
+            <Section
+              title="Workbook"
+              right={
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setWb(null);
+                      setRawInput(null);
+                      setSchemaValidation(null);
+                      setInputValidation(null);
+                      setSimErrors([]);
+                      setSimResults(null);
+                    }}
+                  >
+                    Close
+                  </Button>
 
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setWb(createStarterBusinessLogicWorkbook());
-                  setRawInput(null);
-                  setSchemaValidation(null);
-                  setInputValidation(null);
-                  setSimErrors([]);
-                  setSimResults(null);
-                }}
-              >
-                Starter example
-              </Button>
+                  <Button
+                    onClick={() => {
+                      const data = writeBusinessLogicWorkbook(wb);
+                      downloadArrayBuffer({ data, filename: "business-logic.xlsx" });
+                    }}
+                  >
+                    Export XLSX
+                  </Button>
+                </>
+              }
+            >
+              <div className="text-sm text-muted-foreground">
+                Business-logic workbook loaded. Edit the three sheets in-place, then export, generate template, and run the
+                simulation.
+              </div>
+            </Section>
 
-              <label className="inline-flex cursor-pointer items-center gap-2">
-                <input
-                  type="file"
-                  accept={fileInputAcceptXlsx()}
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    void onImportBusinessLogic(f);
-                    e.currentTarget.value = "";
+            <Section title="InputTypes">
+              <SimpleTable<InputTypeDef>
+                caption="InputTypes sheet"
+                rows={wb.inputTypes}
+                columns={[
+                  { key: "name", label: "name", placeholder: "e.g. taxpayerId" },
+                  { key: "parseFn", label: "parseFn", kind: "textarea", placeholder: "(raw) => ..." },
+                  { key: "formatFn", label: "formatFn", kind: "textarea", placeholder: "(value) => String(value)" },
+                  { key: "refSheet", label: "refSheet", placeholder: "optional FK sheet" },
+                  { key: "refColumn", label: "refColumn", placeholder: "optional FK column" },
+                ]}
+                onChangeRow={(idx, next) => setInputTypes(wb.inputTypes.map((r, i) => (i === idx ? next : r)))}
+                onAddRow={() =>
+                  setInputTypes([
+                    ...wb.inputTypes,
+                    { name: "", parseFn: "(raw) => raw", formatFn: "(value) => String(value ?? '')" },
+                  ])
+                }
+                onDeleteRow={(idx) => setInputTypes(wb.inputTypes.filter((_, i) => i !== idx))}
+              />
+            </Section>
+
+            <Section title="Columns">
+              <SimpleTable<ColumnDef>
+                caption="Columns sheet"
+                rows={wb.columns}
+                columns={[
+                  { key: "sheet", label: "sheet", placeholder: "e.g. Taxpayers" },
+                  { key: "columnName", label: "columnName", placeholder: "e.g. id" },
+                  { key: "typeName", label: "typeName", placeholder: "e.g. taxpayerId" },
+                ]}
+                onChangeRow={(idx, next) => setColumns(wb.columns.map((r, i) => (i === idx ? next : r)))}
+                onAddRow={() => setColumns([...wb.columns, { sheet: "", columnName: "", typeName: "" }])}
+                onDeleteRow={(idx) => setColumns(wb.columns.filter((_, i) => i !== idx))}
+              />
+            </Section>
+
+            <Section title="Rules">
+              <SimpleTable<RuleDef>
+                caption="Rules sheet"
+                rows={wb.rules}
+                columns={[
+                  { key: "name", label: "name", placeholder: "e.g. computeTotals" },
+                  { key: "ruleFn", label: "ruleFn", kind: "textarea", placeholder: "(draft) => { ... }" },
+                ]}
+                onChangeRow={(idx, next) => setRules(wb.rules.map((r, i) => (i === idx ? next : r)))}
+                onAddRow={() => setRules([...wb.rules, { name: "", ruleFn: "(draft) => {}" }])}
+                onDeleteRow={(idx) => setRules(wb.rules.filter((_, i) => i !== idx))}
+              />
+            </Section>
+
+            <Section
+              title="Template + Simulation"
+              right={
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const data = generateTemplate(wb);
+                      downloadArrayBuffer({ data, filename: "template.xlsx" });
+                    }}
+                  >
+                    Generate template XLSX
+                  </Button>
+
+                  <label className="inline-flex cursor-pointer items-center gap-2">
+                    <input
+                      type="file"
+                      accept={fileInputAcceptXlsx()}
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        void onUploadFilledTemplate(f);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                    <span className={buttonVariants({ variant: "secondary" })}>Upload filled template</span>
+                  </label>
+
+                  <Button disabled={!jsRunner} onClick={() => void onValidateAndSimulate()}>
+                    Validate + Run sim
+                  </Button>
+                </>
+              }
+            >
+              <div className="flex flex-col gap-3">
+                <div className="text-sm text-muted-foreground">
+                  Uploaded input workbook:{" "}
+                  <span className="font-mono">{rawInput ? `${rawInput.sheetNames.length} sheet(s)` : "none"}</span>
+                </div>
+                <SimResults schemaErrors={schemaErrors} inputErrors={inputErrors} simErrors={simErrors} results={simResults} />
+              </div>
+            </Section>
+          </>
+        ) : (
+          <Section title="Start">
+            <div className="flex flex-col gap-4">
+              <div className="text-sm text-muted-foreground">
+                Create a new business-logic workbook or open an existing one (XLSX with `InputTypes`, `Columns`, `Rules`).
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => {
+                    setWb(createBlankBusinessLogicWorkbook());
+                    setRawInput(null);
+                    setSchemaValidation(null);
+                    setInputValidation(null);
+                    setSimErrors([]);
+                    setSimResults(null);
                   }}
-                />
-                <span className={buttonVariants({ variant: "default" })}>Import XLSX</span>
-              </label>
+                >
+                  Create new
+                </Button>
 
-              <Button
-                onClick={() => {
-                  const data = writeBusinessLogicWorkbook(wb);
-                  downloadArrayBuffer({ data, filename: "business-logic.xlsx" });
-                }}
-              >
-                Export XLSX
-              </Button>
-            </>
-          }
-        >
-          <div className="text-sm text-muted-foreground">
-            Edit the three business-logic sheets in-place. Keep it simple: text inputs + textareas.
-          </div>
-        </Section>
-
-        <Section title="InputTypes">
-          <SimpleTable<InputTypeDef>
-            caption="InputTypes sheet"
-            rows={wb.inputTypes}
-            columns={[
-              { key: "name", label: "name", placeholder: "e.g. taxpayerId" },
-              { key: "parseFn", label: "parseFn", kind: "textarea", placeholder: "(raw) => ..." },
-              { key: "formatFn", label: "formatFn", kind: "textarea", placeholder: "(value) => String(value)" },
-              { key: "refSheet", label: "refSheet", placeholder: "optional FK sheet" },
-              { key: "refColumn", label: "refColumn", placeholder: "optional FK column" },
-            ]}
-            onChangeRow={(idx, next) => setInputTypes(wb.inputTypes.map((r, i) => (i === idx ? next : r)))}
-            onAddRow={() =>
-              setInputTypes([
-                ...wb.inputTypes,
-                { name: "", parseFn: "(raw) => raw", formatFn: "(value) => String(value ?? '')" },
-              ])
-            }
-            onDeleteRow={(idx) => setInputTypes(wb.inputTypes.filter((_, i) => i !== idx))}
-          />
-        </Section>
-
-        <Section title="Columns">
-          <SimpleTable<ColumnDef>
-            caption="Columns sheet"
-            rows={wb.columns}
-            columns={[
-              { key: "sheet", label: "sheet", placeholder: "e.g. Taxpayers" },
-              { key: "columnName", label: "columnName", placeholder: "e.g. id" },
-              { key: "typeName", label: "typeName", placeholder: "e.g. taxpayerId" },
-            ]}
-            onChangeRow={(idx, next) => setColumns(wb.columns.map((r, i) => (i === idx ? next : r)))}
-            onAddRow={() => setColumns([...wb.columns, { sheet: "", columnName: "", typeName: "" }])}
-            onDeleteRow={(idx) => setColumns(wb.columns.filter((_, i) => i !== idx))}
-          />
-        </Section>
-
-        <Section title="Rules">
-          <SimpleTable<RuleDef>
-            caption="Rules sheet"
-            rows={wb.rules}
-            columns={[
-              { key: "name", label: "name", placeholder: "e.g. computeTotals" },
-              { key: "ruleFn", label: "ruleFn", kind: "textarea", placeholder: "(draft) => { ... }" },
-            ]}
-            onChangeRow={(idx, next) => setRules(wb.rules.map((r, i) => (i === idx ? next : r)))}
-            onAddRow={() => setRules([...wb.rules, { name: "", ruleFn: "(draft) => {}" }])}
-            onDeleteRow={(idx) => setRules(wb.rules.filter((_, i) => i !== idx))}
-          />
-        </Section>
-
-        <Section
-          title="Template + Simulation"
-          right={
-            <>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  const data = generateTemplate(wb);
-                  downloadArrayBuffer({ data, filename: "template.xlsx" });
-                }}
-              >
-                Generate template XLSX
-              </Button>
-
-              <label className="inline-flex cursor-pointer items-center gap-2">
-                <input
-                  type="file"
-                  accept={fileInputAcceptXlsx()}
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    void onUploadFilledTemplate(f);
-                    e.currentTarget.value = "";
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setWb(createStarterBusinessLogicWorkbook());
+                    setRawInput(null);
+                    setSchemaValidation(null);
+                    setInputValidation(null);
+                    setSimErrors([]);
+                    setSimResults(null);
                   }}
-                />
-                <span className={buttonVariants({ variant: "secondary" })}>Upload filled template</span>
-              </label>
+                >
+                  Starter example
+                </Button>
 
-              <Button disabled={!jsRunner} onClick={() => void onValidateAndSimulate()}>
-                Validate + Run sim
-              </Button>
-            </>
-          }
-        >
-          <div className="flex flex-col gap-3">
-            <div className="text-sm text-muted-foreground">
-              Uploaded input workbook:{" "}
-              <span className="font-mono">{rawInput ? `${rawInput.sheetNames.length} sheet(s)` : "none"}</span>
+                <label className="inline-flex cursor-pointer items-center gap-2">
+                  <input
+                    type="file"
+                    accept={fileInputAcceptXlsx()}
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      void onImportBusinessLogic(f);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                  <span className={buttonVariants({ variant: "default" })}>Open existing XLSX</span>
+                </label>
+              </div>
             </div>
-            <SimResults
-              schemaErrors={schemaErrors}
-              inputErrors={inputErrors}
-              simErrors={simErrors}
-              results={simResults}
-            />
-          </div>
-        </Section>
+          </Section>
+        )}
 
         <div className="text-xs text-muted-foreground">
           Tip: press <kbd className="rounded border px-1">d</kbd> to toggle dark mode.
