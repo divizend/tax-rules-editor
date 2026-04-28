@@ -40,7 +40,6 @@ export function compileSourceToFunction(source: string): CompileResult {
   // 1) Expression form (covers arrow functions + function expressions)
   try {
     // Wrap in parens so arrow functions parse correctly.
-    // eslint-disable-next-line no-new-func
     const value = new Function(`"use strict"; return (${source});`)() as unknown;
     if (typeof value === "function") {
       compiledCache.set(source, value as JsRunnerFunction);
@@ -53,7 +52,6 @@ export function compileSourceToFunction(source: string): CompileResult {
   // 2) Statement form (covers function declarations)
   try {
     // Attempt to return the first known binding name that users are likely to choose.
-    // eslint-disable-next-line no-new-func
     const value = new Function(
       `"use strict";
 ${source}

@@ -11,7 +11,7 @@ import type { RuleError } from "@/src/domain/errors";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { SimpleTable } from "@/components/editor/simple-table";
 import { downloadArrayBuffer, fileToArrayBuffer } from "@/components/editor/download";
-import { createStarterBusinessLogicWorkbook } from "@/components/editor/starter-workbook";
+import { createBlankBusinessLogicWorkbook, createStarterBusinessLogicWorkbook } from "@/components/editor/starter-workbook";
 import { SimResults } from "@/components/sim/sim-results";
 
 import { readBusinessLogicWorkbook } from "@/src/xlsx/readBusinessLogic";
@@ -91,15 +91,11 @@ export function WorkbookEditorApp(): React.ReactNode {
   const [simErrors, setSimErrors] = React.useState<RuleError[]>([]);
   const [simResults, setSimResults] = React.useState<Record<string, Aggregate> | null>(null);
 
-  const jsRunnerRef = React.useRef<JsRunnerClient | null>(null);
-
-  React.useEffect(() => {
-    jsRunnerRef.current = new JsRunnerClient({ timeoutMs: 2_000 });
-    return () => {
-      jsRunnerRef.current?.terminate();
-      jsRunnerRef.current = null;
-    };
+  const jsRunner = React.useMemo(() => {
+    if (typeof Worker === "undefined") return null;
+    return new JsRunnerClient({ timeoutMs: 2_000 });
   }, []);
+  React.useEffect(() => () => jsRunner?.terminate(), [jsRunner]);
 
   const schemaErrors = asValidationErrors(schemaValidation);
   const inputErrors = asValidationErrors(inputValidation);
@@ -129,16 +125,7 @@ export function WorkbookEditorApp(): React.ReactNode {
     setSimErrors([]);
     setSimResults(null);
 
-    const jsRunner = jsRunnerRef.current;
-    if (!jsRunner) {
-      const e: SheetError = {
-        severity: "error",
-        sheet: "Worker",
-        message: "Worker not ready yet. Please try again.",
-      };
-      setSchemaValidation({ ok: false, errors: [e] } as unknown as ValidationResult<BusinessLogicWorkbook>);
-      return;
-    }
+    if (!jsRunner) return;
 
     const schemaRes = await validateSchemaWithWorkerCompile({ wb, jsRunner });
     setSchemaValidation(schemaRes);
@@ -192,6 +179,20 @@ export function WorkbookEditorApp(): React.ReactNode {
               <Button
                 variant="secondary"
                 onClick={() => {
+                  setWb(createBlankBusinessLogicWorkbook());
+                  setRawInput(null);
+                  setSchemaValidation(null);
+                  setInputValidation(null);
+                  setSimErrors([]);
+                  setSimResults(null);
+                }}
+              >
+                Blank
+              </Button>
+
+              <Button
+                variant="secondary"
+                onClick={() => {
                   setWb(createStarterBusinessLogicWorkbook());
                   setRawInput(null);
                   setSchemaValidation(null);
@@ -200,7 +201,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                   setSimResults(null);
                 }}
               >
-                New
+                Starter example
               </Button>
 
               <label className="inline-flex cursor-pointer items-center gap-2">
@@ -314,7 +315,9 @@ export function WorkbookEditorApp(): React.ReactNode {
                 <span className={buttonVariants({ variant: "secondary" })}>Upload filled template</span>
               </label>
 
-              <Button onClick={() => void onValidateAndSimulate()}>Validate + Run sim</Button>
+              <Button disabled={!jsRunner} onClick={() => void onValidateAndSimulate()}>
+                Validate + Run sim
+              </Button>
             </>
           }
         >

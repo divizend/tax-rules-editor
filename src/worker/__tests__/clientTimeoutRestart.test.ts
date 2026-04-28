@@ -40,7 +40,7 @@ test("timeout causes worker restart; next call works", async () => {
 
     // First worker simulates an infinite loop by never responding to runParse.
     if (instance === 1) {
-      return new MockWorker((_msg) => null) as unknown as Worker;
+      return new MockWorker(() => null) as unknown as Worker;
     }
 
     // Second worker responds normally.

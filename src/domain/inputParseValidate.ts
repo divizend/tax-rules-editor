@@ -109,13 +109,12 @@ function resolveFkTargets(
 }
 
 function resolveTaxpayerForRow(params: {
-  schema: BusinessLogicWorkbook;
   inputTypesByName: Map<string, InputTypeDef>;
   columnsBySheet: Map<string, ColumnDef[]>;
   idx: WorkbookIndex;
   start: RowNode;
 }): { ok: true; taxpayerId: string } | { ok: false; message: string } {
-  const { schema, inputTypesByName, columnsBySheet, idx, start } = params;
+  const { inputTypesByName, columnsBySheet, idx, start } = params;
 
   const taxpayersSheet = "Taxpayers";
   const taxpayersIdIndex = idx.bySheetByColumnValue[taxpayersSheet]?.id ?? {};
@@ -130,7 +129,6 @@ function resolveTaxpayerForRow(params: {
     return { ok: true, taxpayerId: v };
   }
 
-  const fkCols = startCols.filter((c) => isFkType(inputTypesByName.get(trim(c.typeName))));
   const stack: Array<{ node: RowNode; path: RowKey[] }> = [{ node: start, path: [rowKey(start.sheet, start.id)] }];
   const visited = new Set<RowKey>();
 
@@ -316,7 +314,7 @@ export function parseAndValidateInputWorkbook(params: {
   for (const sheet of schemaSheetNames) {
     validatedRowsBySheet[sheet] = [];
     for (const r of rowsBySheetNodes[sheet] ?? []) {
-      const resolved = resolveTaxpayerForRow({ schema, inputTypesByName, columnsBySheet, idx, start: r });
+      const resolved = resolveTaxpayerForRow({ inputTypesByName, columnsBySheet, idx, start: r });
       if (!resolved.ok) {
         errors.push(cellError(sheet, r.rowNumber, "id", resolved.message));
         continue;
