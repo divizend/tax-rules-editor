@@ -319,79 +319,84 @@ export function WorkbookEditorApp(): React.ReactNode {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto rounded-xl border bg-background p-2">
-          <div className="flex items-center gap-2">
-            {tabs.map((t) => {
-              const active = t.id === activeTabId
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setActiveTabId(t.id)}
-                  className={[
-                    "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm",
-                    active ? "bg-muted" : "hover:bg-muted/50",
-                  ].join(" ")}
-                >
-                  <span className="max-w-[10rem] truncate">{t.title}</span>
-                  <span
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-md border text-xs hover:bg-background"
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      closeTab(t.id)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
+        {tabs.length > 0 ? (
+          <div className="flex items-center gap-2 overflow-x-auto rounded-xl border bg-background p-2">
+            <div className="flex items-center gap-2">
+              {tabs.map((t) => {
+                const active = t.id === activeTabId
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setActiveTabId(t.id)}
+                    className={[
+                      "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm",
+                      active ? "bg-muted" : "hover:bg-muted/50",
+                    ].join(" ")}
+                  >
+                    <span className="max-w-[10rem] truncate">{t.title}</span>
+                    <span
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-md border text-xs hover:bg-background"
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
                         closeTab(t.id)
-                      }
-                    }}
-                    aria-label={`Close ${t.title}`}
-                  >
-                    ×
-                  </span>
-                </button>
-              )
-            })}
-          </div>
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          closeTab(t.id)
+                        }
+                      }}
+                      aria-label={`Close ${t.title}`}
+                    >
+                      ×
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() =>
-                openTab({
-                  title: nextUntitledTitle("Untitled"),
-                  wb: createNewBusinessLogicWorkbook(),
-                })
-              }
-            >
-              + New
-            </Button>
-            <label className="inline-flex cursor-pointer items-center gap-2">
-              <input
-                type="file"
-                accept={fileInputAcceptXlsx()}
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  if (!f) return
-                  void onImportBusinessLogic(f)
-                  e.currentTarget.value = ""
-                }}
-              />
-              <span
-                className={buttonVariants({ variant: "secondary", size: "sm" })}
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() =>
+                  openTab({
+                    title: nextUntitledTitle("Untitled"),
+                    wb: createNewBusinessLogicWorkbook(),
+                  })
+                }
               >
-                + Open
-              </span>
-            </label>
+                + New
+              </Button>
+              <label className="inline-flex cursor-pointer items-center gap-2">
+                <input
+                  type="file"
+                  accept={fileInputAcceptXlsx()}
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (!f) return
+                    void onImportBusinessLogic(f)
+                    e.currentTarget.value = ""
+                  }}
+                />
+                <span
+                  className={buttonVariants({
+                    variant: "secondary",
+                    size: "sm",
+                  })}
+                >
+                  + Open
+                </span>
+              </label>
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {activeTab ? (
           <>
