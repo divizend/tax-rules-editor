@@ -171,7 +171,12 @@ function handleRequest(msg: WorkerRequestMessage): WorkerResponseMessage {
 
 // Worker entrypoint (guarded so node:test can import this file).
 if (typeof self !== "undefined") {
-  const ctx = self as any;
+  type WorkerCtx = {
+    onmessage: ((ev: MessageEvent<unknown>) => void) | null;
+    postMessage: (message: unknown) => void;
+  };
+
+  const ctx = self as unknown as WorkerCtx;
   ctx.onmessage = (ev: MessageEvent<unknown>) => {
     if (!isWorkerRequestMessage(ev.data)) return;
     const res = handleRequest(ev.data);
