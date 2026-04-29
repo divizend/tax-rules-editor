@@ -105,10 +105,10 @@ export function JsCodeWithAiExplain(props: {
           setOpen(true);
           void startExplain();
         }}
-        className="w-full text-left"
+        className="group w-full cursor-pointer text-left focus-visible:outline-none"
         aria-label="Explain code"
       >
-        <div className="whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground">
+        <div className="rounded-md p-2 font-mono text-xs text-muted-foreground whitespace-pre-wrap break-words transition duration-150 group-hover:bg-muted/30 group-hover:text-foreground group-hover:shadow-sm group-hover:shadow-primary/20 group-hover:ring-1 group-hover:ring-primary/30 group-focus-visible:bg-muted/30 group-focus-visible:text-foreground group-focus-visible:shadow-sm group-focus-visible:shadow-primary/20 group-focus-visible:ring-2 group-focus-visible:ring-primary/40">
           {preview}
         </div>
       </button>
