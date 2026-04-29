@@ -1229,7 +1229,7 @@ export function WorkbookEditorApp(): React.ReactNode {
                           )
                         }}
                         onAddRow={(row) =>
-                          setColumns([...activeTab.wb.columns, row])
+                          setColumns([...activeTab.wb.columns, { ...row, sheet: entity }])
                         }
                         onDeleteRow={(localIdx) => {
                           const g = globalColumnIndexForEntity(entity, localIdx)
