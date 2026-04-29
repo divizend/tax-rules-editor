@@ -1219,6 +1219,51 @@ export function WorkbookEditorApp(): React.ReactNode {
                             return `typeName "${typeName}" does not exist in InputType sheet`
                           return null
                         }}
+                        rowActions={(row, localIdx) => {
+                          const isId = trim(row.columnName) === "id"
+                          const idPinnedAbove =
+                            localIdx === 1 && trim(rows[0]?.columnName) === "id"
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (localIdx <= 0) return
+                                  const g0 = globalColumnIndexForEntity(entity, localIdx - 1)
+                                  const g1 = globalColumnIndexForEntity(entity, localIdx)
+                                  if (g0 < 0 || g1 < 0) return
+                                  const next = [...activeTab.wb.columns]
+                                  ;[next[g0], next[g1]] = [next[g1]!, next[g0]!]
+                                  setColumns(next)
+                                }}
+                                disabled={isId || localIdx <= 0 || idPinnedAbove}
+                                className="rounded-md border p-1.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                                title="Move up"
+                                aria-label="Move up"
+                              >
+                                <ArrowUp className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (localIdx >= rows.length - 1) return
+                                  const g0 = globalColumnIndexForEntity(entity, localIdx)
+                                  const g1 = globalColumnIndexForEntity(entity, localIdx + 1)
+                                  if (g0 < 0 || g1 < 0) return
+                                  const next = [...activeTab.wb.columns]
+                                  ;[next[g0], next[g1]] = [next[g1]!, next[g0]!]
+                                  setColumns(next)
+                                }}
+                                disabled={isId || localIdx >= rows.length - 1}
+                                className="rounded-md border p-1.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                                title="Move down"
+                                aria-label="Move down"
+                              >
+                                <ArrowDown className="h-4 w-4" />
+                              </button>
+                            </>
+                          )
+                        }}
                         canDeleteRow={(row) => trim(row.columnName) !== "id"}
                         canEditRow={(row) => trim(row.columnName) !== "id"}
                         onChangeRow={(localIdx, next) => {
