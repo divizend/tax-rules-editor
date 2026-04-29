@@ -1440,10 +1440,28 @@ export function WorkbookEditorApp(): React.ReactNode {
           </Section>
         )}
 
-        <div className="text-xs text-muted-foreground">
-          Tip: press <kbd className="rounded border px-1">d</kbd> to toggle
-          light/dark and <kbd className="rounded border px-1">t</kbd> to cycle
-          themes.
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <div>
+            Tip: press <kbd className="rounded border px-1">d</kbd> to toggle
+            light/dark and <kbd className="rounded border px-1">t</kbd> to cycle
+            themes.
+          </div>
+
+          <a
+            href="https://github.com/divizend/tax-rules-editor"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open GitHub repository"
+            className="inline-flex items-center rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4 w-4 fill-current"
+              aria-hidden="true"
+            >
+              <path d="M12 2C6.477 2 2 6.611 2 12.302c0 4.555 2.865 8.42 6.839 9.782.5.098.682-.223.682-.495 0-.244-.009-.89-.014-1.746-2.782.631-3.369-1.382-3.369-1.382-.455-1.192-1.11-1.509-1.11-1.509-.907-.644.069-.631.069-.631 1.003.073 1.531 1.063 1.531 1.063.892 1.575 2.341 1.12 2.91.857.091-.667.35-1.12.636-1.377-2.22-.262-4.555-1.145-4.555-5.096 0-1.125.39-2.045 1.029-2.765-.103-.262-.446-1.318.098-2.747 0 0 .84-.277 2.75 1.056A9.152 9.152 0 0 1 12 6.896c.85.004 1.705.119 2.503.35 1.909-1.333 2.748-1.056 2.748-1.056.546 1.429.203 2.485.1 2.747.64.72 1.027 1.64 1.027 2.765 0 3.961-2.338 4.831-4.566 5.088.36.32.68.95.68 1.915 0 1.382-.012 2.496-.012 2.835 0 .274.18.597.688.494 3.97-1.365 6.833-5.226 6.833-9.78C22 6.611 17.523 2 12 2Z" />
+            </svg>
+          </a>
         </div>
       </div>
 
